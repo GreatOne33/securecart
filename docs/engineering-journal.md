@@ -43,6 +43,8 @@ Resolution:
 ```bash
 kind version
 
+
+
 ### Lessons Learned
 
 - Expanding a VMware virtual disk requires both resizing the guest partition and the filesystem.
