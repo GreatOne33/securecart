@@ -43,3 +43,13 @@ Resolution:
 ```bash
 kind version
 
+### Lessons Learned
+
+- Expanding a VMware virtual disk requires both resizing the guest partition and the filesystem.
+- Installing tools from the official project documentation helps avoid outdated installation methods.
+- Infrastructure configuration should be stored in source control so environments can be recreated consistently.
+
+### Next Session
+
+- Deploy the first Kubernetes workload.
+- Learn Pods and Deployments.
