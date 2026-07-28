@@ -8,6 +8,9 @@
 - [x] Install Kind
 - [x] Install Helm
 - [x] Create GitHub repository
+
+### Kubernetes Core
+
 - [x] Create Kind cluster
 - [x] Deploy first Pod
 - [x] Create Deployment
@@ -18,12 +21,23 @@
 - [x] Understand label selectors
 - [x] Verify Kubernetes service discovery
 - [x] Test Kubernetes DNS resolution
-- [X] Perform Rolling Updates
-- [X] Perform Rollbacks
-- [ ] Configure Ingress
-- [ ] Configure ConfigMaps
+- [x] Perform Rolling Updates
+- [x] Perform Rollbacks
+
+### Configuration Management
+
+- [x] Configure ConfigMaps
+- [x] Build custom SecureCart frontend
+- [x] Render HTML using Init Containers
+- [x] Use emptyDir shared volumes
+- [x] Inject Pod metadata with the Downward API
+- [x] Demonstrate ConfigMap updates
+
+### Next
+
 - [ ] Configure Secrets
 - [ ] Add Health Probes
+- [ ] Configure Ingress
 - [ ] Add Resource Limits
 - [ ] Configure NetworkPolicies
 
@@ -31,8 +45,7 @@
 
 ## Phase 2 - Application
 
-- [ ] Build custom SecureCart frontend
-- [ ] Containerize frontend
+- [ ] Containerize custom frontend
 - [ ] Build backend API
 - [ ] Containerize backend
 - [ ] Connect frontend to backend
@@ -44,7 +57,7 @@
 
 ## Phase 3 - DevOps
 
-- [ ] Build Docker images
+- [ ] Build production Docker images
 - [ ] Publish images to registry
 - [ ] Create Helm chart
 - [ ] Configure GitHub Actions

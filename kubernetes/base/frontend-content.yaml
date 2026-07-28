@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: securecart-frontend-content
+data:
+  index.html.template: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${APP_NAME}</title>
+      <style>
+        body {
+          margin: 0;
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #f4f7fb;
+          font-family: Arial, sans-serif;
+          color: #1f2937;
+        }
+
+        .card {
+          width: 520px;
+          padding: 40px;
+          background: white;
+          border-radius: 14px;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.10);
+        }
+
+        h1 {
+          margin-top: 0;
+          font-size: 36px;
+        }
+
+        .subtitle {
+          margin-bottom: 30px;
+          color: #6b7280;
+        }
+
+        .row {
+          display: flex;
+          justify-content: space-between;
+          padding: 12px 0;
+          border-bottom: 1px solid #e5e7eb;
+        }
+
+        .label {
+          font-weight: bold;
+        }
+
+        .footer {
+          margin-top: 28px;
+          text-align: center;
+          color: #6b7280;
+          font-size: 14px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <h1>${APP_NAME}</h1>
+        <p class="subtitle">Cloud-native storefront running on Kubernetes</p>
+
+        <div class="row">
+          <span class="label">Environment</span>
+          <span>${ENVIRONMENT}</span>
+        </div>
+
+        <div class="row">
+          <span class="label">Version</span>
+          <span>${VERSION}</span>
+        </div>
+
+        <div class="row">
+          <span class="label">Company</span>
+          <span>${COMPANY}</span>
+        </div>
+
+        <div class="row">
+          <span class="label">Pod</span>
+          <span>${POD_NAME}</span>
+        </div>
+
+        <div class="footer">
+          Served by NGINX inside the SecureCart Kubernetes cluster
+        </div>
+      </div>
+    </body>
+    </html>

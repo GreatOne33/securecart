@@ -1,6 +1,6 @@
 # SecureCart
 
-> A production-style cloud-native e-commerce platform built to demonstrate modern Cloud Infrastructure, Kubernetes, AWS, Terraform, DevSecOps, and Cloud Security engineering practices.
+> A production-style cloud-native application built to demonstrate Kubernetes, AWS, Terraform, DevSecOps, and Cloud Infrastructure engineering practices from development through production deployment.
 
 ---
 
@@ -25,49 +25,93 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - Apply Cloud Security best practices
 - Document engineering decisions throughout development
 
+## 🏗️ Current Architecture
+
+Browser
+    │
+ClusterIP Service
+    │
+Deployment (3 Replicas)
+    │
+NGINX Containers
+    │
+Init Container
+    │
+ConfigMap
+
 ---
 
-## 📈 Project Progress
+## 📈 Current Progress
 
-- [x] Create GitHub repository
-- [x] Build local Cloud Lab
-- [x] Install Docker
-- [x] Install kubectl
-- [x] Install Kind
-- [x] Install Helm
-- [x] Create local Kubernetes cluster
-- [ ] Deploy first application
-- [ ] Kubernetes Services
-- [ ] Ingress Controller
-- [ ] Helm Charts
-- [ ] GitHub Actions CI/CD
-- [ ] Terraform Infrastructure
-- [ ] Amazon EKS Deployment
-- [ ] Monitoring & Logging
-- [ ] Security Hardening
+### Infrastructure
 
+- [x] GitHub Repository
+- [x] Ubuntu Cloud Lab
+- [x] Docker
+- [x] kubectl
+- [x] Kind
+- [x] Helm
+
+### Kubernetes
+
+- [x] Kind Cluster
+- [x] Pods
+- [x] Deployments
+- [x] ReplicaSets
+- [x] Self-Healing
+- [x] Scaling
+- [x] ClusterIP Services
+- [x] Service Discovery
+- [x] Kubernetes DNS
+- [x] Rolling Updates
+- [x] Rollbacks
+
+### Configuration
+
+- [x] ConfigMaps
+- [x] Init Containers
+- [x] emptyDir Volumes
+- [x] Downward API
+- [x] Dynamic SecureCart Frontend
+
+### Next
+
+- [ ] Secrets
+- [ ] Health Probes
+- [ ] Ingress
+- [ ] Network Policies
+- [ ] Resource Limits
 ---
 
 ## 🛠️ Technology Stack
 
 ### Cloud
 
-- AWS
+- AWS (planned)
+- Kind
 
-### Containerization
+### Containers
 
 - Docker
 - Kubernetes
-- Kind
-- Helm
+- NGINX
+
+### Kubernetes
+
+- Deployments
+- Services
+- ConfigMaps
+- Init Containers
+- ReplicaSets
 
 ### Infrastructure as Code
 
 - Terraform
 
-### CI/CD
+### DevOps
 
-- GitHub Actions *(planned)*
+- Helm
+- GitHub Actions (planned)
 
 ### Version Control
 
@@ -95,25 +139,43 @@ securecart/
 
 Project documentation is maintained throughout development.
 
-- Engineering Journal
-- Architecture
-- Design Decisions
-- Troubleshooting
-- Roadmap
+## 📚 Documentation
+
+- docs/engineering-journal.md
+- docs/architecture.md
+- docs/decisions.md
+- docs/troubleshooting.md
+- docs/roadmap.md
 
 ---
 
 ## 🚀 Current Focus
 
-The current focus is building the Kubernetes platform locally using Kind before migrating the application to Amazon EKS.
+## 🚀 Current Focus
 
-Upcoming milestones include:
+Current milestone:
 
-- Deploy the first application
-- Learn Kubernetes Deployments
-- Configure Services
-- Configure Ingress
-- Build Helm charts
+- Kubernetes Secrets
+- Health Probes
+- Ingress
+- Containerizing the SecureCart frontend
+
+Long-term goal:
+
+Deploy the complete SecureCart platform to Amazon EKS using Terraform, Helm, and GitHub Actions.
+
+## ✨ Current Features
+
+- Multi-replica Kubernetes Deployment
+- ClusterIP Service
+- Kubernetes DNS
+- Rolling Updates
+- Rollbacks
+- ConfigMap-driven configuration
+- Dynamic HTML generation
+- Init Containers
+- Downward API
+- Production-style documentation
 
 ---
 

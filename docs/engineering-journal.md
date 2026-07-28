@@ -322,3 +322,41 @@ This allows clients to continue using the same Service name while Kubernetes upd
 ## Next Session
 
 Configure application settings externally using Kubernetes ConfigMaps.
+
+## Session 6: Custom Frontend and ConfigMap Updates
+
+### Goal
+
+Replace the default NGINX page with a custom SecureCart frontend and demonstrate how ConfigMap changes affect running Pods.
+
+### Tasks Completed
+
+- Created an HTML template stored in a ConfigMap
+- Added an init container to render the template with `envsubst`
+- Used an `emptyDir` volume to share generated content with NGINX
+- Used the Downward API to inject the Pod name
+- Verified the application through the Kubernetes Service
+- Updated the environment from Development to Staging
+- Updated the version from 1.0 to 1.1
+- Confirmed existing Pods retained the original environment variables
+- Restarted the Deployment
+- Confirmed new Pods loaded the updated ConfigMap values
+
+### Challenges
+
+ConfigMap values injected as environment variables did not change inside existing Pods after the ConfigMap was updated.
+
+### Lessons Learned
+
+Environment variables are populated when a container starts. Updating the ConfigMap object does not modify the environment of already-running containers. The Pods must be recreated for the new values to take effect.
+
+The init container also runs only when a Pod starts, so the generated HTML is not recreated until Kubernetes creates a new Pod.
+
+### Key Takeaways
+
+- ConfigMaps separate configuration from the container image
+- Environment-variable-based ConfigMaps require Pod recreation
+- Init containers can perform application setup before the main container starts
+- `emptyDir` volumes allow containers in the same Pod to share generated files
+- The Downward API can expose Kubernetes metadata to an application
+
