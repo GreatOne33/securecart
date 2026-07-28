@@ -43,7 +43,7 @@ Resolution:
 ```bash
 kind version
 
-``` bash
+``` 
 
 
 ### Lessons Learned
@@ -134,7 +134,7 @@ kubectl get pods --watch
 kubectl delete pod <pod-name>
 kubectl scale deployment securecart-frontend --replicas=3
 kubectl scale deployment securecart-frontend --replicas=1
-``` bash
+``` 
 
 ### Challenges
 
