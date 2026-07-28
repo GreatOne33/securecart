@@ -201,10 +201,13 @@ kubectl run service-test \
   --rm -i \
   -- wget -qO- http://securecart-service
 
+```
+
 ### Delete the local cluster
 
 ```bash
 kind delete cluster --name securecart
+
 ```
 
 ---
