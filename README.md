@@ -25,19 +25,20 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - Apply Cloud Security best practices
 - Document engineering decisions throughout development
 
-## 🏗️ Current Architecture
+---
 
-Browser
-    │
-ClusterIP Service
-    │
-Deployment (3 Replicas)
-    │
-NGINX Containers
-    │
-Init Container
-    │
-ConfigMap
+## ✨ Current Features
+
+- Multi-replica Kubernetes Deployment
+- ClusterIP Service
+- Kubernetes DNS
+- Rolling Updates
+- Rollbacks
+- ConfigMap-driven configuration
+- Dynamic HTML generation
+- Init Containers
+- Downward API
+- Production-style documentation
 
 ---
 
@@ -81,20 +82,51 @@ ConfigMap
 - [ ] Ingress
 - [ ] Network Policies
 - [ ] Resource Limits
+
+---
+
+## 🏗️ Current Architecture
+
+```text
+                         Kubernetes Cluster
+┌──────────────────────────────────────────────────────────┐
+│                                                          │
+│  Client Pod                                              │
+│      │                                                   │
+│      ▼                                                   │
+│  securecart-service                                      │
+│  ClusterIP Service                                       │
+│      │                                                   │
+│      ▼                                                   │
+│  securecart-frontend Deployment                          │
+│  3 replicas                                              │
+│      │                                                   │
+│      ├── Init Container                                  │
+│      │     ├── Reads HTML template ConfigMap             │
+│      │     ├── Reads application ConfigMap               │
+│      │     ├── Reads Pod name through Downward API       │
+│      │     └── Writes rendered HTML to emptyDir          │
+│      │                                                   │
+│      └── NGINX Container                                 │
+│            └── Serves rendered HTML from emptyDir        │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
 ---
 
 ## 🛠️ Technology Stack
 
 ### Cloud
 
-- AWS (planned)
-- Kind
+- AWS *(planned)*
 
-### Containers
+### Containers and Orchestration
 
 - Docker
 - Kubernetes
+- Kind
 - NGINX
+- Helm
 
 ### Kubernetes
 
@@ -120,17 +152,65 @@ ConfigMap
 
 ---
 
+## ▶️ Deploy Locally
+
+### Prerequisites
+
+- Docker
+- kubectl
+- Kind
+
+### Create the cluster
+
+```bash
+kind create cluster --name securecart --config kind/cluster.yaml
+```
+
+### Validate the cluster
+```bash
+kubectl cluster-info --context kind-securecart
+```
+
+### Deploy SecureCart
+
+```bash
+kubectl apply -f kubernetes/base/configmap.yaml
+kubectl apply -f kubernetes/base/frontend-content.yaml
+kubectl apply -f kubernetes/base/frontend-deployment.yaml
+kubectl apply -f kubernetes/base/frontend-service.yaml
+```
+
+### Verify the deployment
+
+```bash
+kubectl rollout status deployment/securecart-frontend
+kubectl get pods
+kubectl get services
+```
+
+### Test the application internally
+
+```bash
+kubectl run service-test \
+  --image=busybox:1.36 \
+  --restart=Never \
+  --rm -i \
+  -- wget -qO- http://securecart-service
+```
+
+---
+
 ## 📁 Repository Structure
 
 ```text
 securecart/
-├── app/
 ├── docs/
-├── helm/
 ├── kind/
 ├── kubernetes/
-├── scripts/
-└── terraform/
+│   └── base/
+├── .gitignore
+├── LICENSE
+└── README.md
 ```
 
 ---
@@ -139,43 +219,27 @@ securecart/
 
 Project documentation is maintained throughout development.
 
-## 📚 Documentation
-
-- docs/engineering-journal.md
-- docs/architecture.md
-- docs/decisions.md
-- docs/troubleshooting.md
-- docs/roadmap.md
+- [Engineering Journal](docs/engineering-journal.md)
+- [Architecture](docs/architecture.md)
+- [Design Decisions](docs/decisions.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Roadmap](docs/roadmap.md)
 
 ---
 
 ## 🚀 Current Focus
 
-## 🚀 Current Focus
+**Current milestone:** Kubernetes Secrets
 
-Current milestone:
+Upcoming work:
 
-- Kubernetes Secrets
-- Health Probes
-- Ingress
-- Containerizing the SecureCart frontend
+- Add health probes
+- Configure Ingress
+- Add resource requests and limits
+- Configure NetworkPolicies
 
-Long-term goal:
+**Long-term goal:** Deploy SecureCart to Amazon EKS using Terraform, Helm, and GitHub Actions.
 
-Deploy the complete SecureCart platform to Amazon EKS using Terraform, Helm, and GitHub Actions.
-
-## ✨ Current Features
-
-- Multi-replica Kubernetes Deployment
-- ClusterIP Service
-- Kubernetes DNS
-- Rolling Updates
-- Rollbacks
-- ConfigMap-driven configuration
-- Dynamic HTML generation
-- Init Containers
-- Downward API
-- Production-style documentation
 
 ---
 
