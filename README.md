@@ -112,6 +112,7 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 │                                                          │
 └──────────────────────────────────────────────────────────┘
 ```
+
 ---
 
 ## 🛠️ Technology Stack
@@ -138,12 +139,13 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 
 ### Infrastructure as Code
 
-- Terraform
+- Terraform *(planned)*
 
 ### DevOps
 
-- Helm
-- GitHub Actions (planned)
+- GitHub Actions *(planned)*
+- CI/CD automation *(planned)*
+- Git-based workflows
 
 ### Version Control
 
@@ -186,6 +188,8 @@ kubectl apply -f kubernetes/base/frontend-service.yaml
 kubectl rollout status deployment/securecart-frontend
 kubectl get pods
 kubectl get services
+kubectl get configmaps
+
 ```
 
 ### Test the application internally
@@ -196,6 +200,12 @@ kubectl run service-test \
   --restart=Never \
   --rm -i \
   -- wget -qO- http://securecart-service
+
+### Delete the local cluster
+
+```bash
+kind delete cluster --name securecart
+
 ```
 
 ---
