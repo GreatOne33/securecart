@@ -18,8 +18,8 @@
 - [x] Understand label selectors
 - [x] Verify Kubernetes service discovery
 - [x] Test Kubernetes DNS resolution
-- [ ] Perform Rolling Updates
-- [ ] Perform Rollbacks
+- [X] Perform Rolling Updates
+- [X] Perform Rollbacks
 - [ ] Configure Ingress
 - [ ] Configure ConfigMaps
 - [ ] Configure Secrets

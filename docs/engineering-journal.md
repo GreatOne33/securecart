@@ -223,3 +223,102 @@ Understanding how a Service can locate Pods without using Pod names or Pod IP ad
 
 Perform rolling updates and rollbacks to deploy new application versions with zero downtime.
 
+# Session 5 - Rolling Updates and Rollbacks
+
+## Goal
+
+Learn how Kubernetes Deployments release new application versions and restore previous versions without replacing the stable Service.
+
+## Starting State
+
+- Deployment: `securecart-frontend`
+- Replicas: 3
+- Original image: `nginx:1.27-alpine`
+- Service: `securecart-service`
+- Deployment revision: 1
+
+## Tasks Completed
+
+- Inspected the Deployment and its rolling-update strategy.
+- Verified the Deployment had three available replicas.
+- Reviewed the initial Deployment revision history.
+- Updated the frontend image from `nginx:1.27-alpine` to `nginx:1.28-alpine`.
+- Watched Kubernetes replace the Pods through a rolling update.
+- Verified that Kubernetes created a new ReplicaSet.
+- Confirmed the old ReplicaSet was retained with zero replicas.
+- Verified the Deployment was using the updated image.
+- Rolled the Deployment back to `nginx:1.27-alpine`.
+- Verified the Service continued routing traffic after the update and rollback.
+
+## Commands Used
+
+```bash
+kubectl get deployment
+
+kubectl describe deployment securecart-frontend
+
+kubectl rollout history deployment/securecart-frontend
+
+kubectl get pods --watch
+
+kubectl set image deployment/securecart-frontend \
+  frontend=nginx:1.28-alpine
+
+kubectl rollout status deployment/securecart-frontend
+
+kubectl get replicasets
+
+kubectl get deployment securecart-frontend \
+  -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+
+kubectl rollout undo deployment/securecart-frontend
+
+kubectl run service-test \
+  --image=busybox:1.36 \
+  --restart=Never \
+  --rm -it \
+  -- wget -qO- http://securecart-service
+```
+
+## Architecture Observed
+
+```text
+Deployment
+    |
+    +-- Old ReplicaSet: nginx:1.27-alpine
+    |       Replicas scaled from 3 to 0
+    |
+    +-- New ReplicaSet: nginx:1.28-alpine
+            Replicas scaled from 0 to 3
+```
+
+During the rollback, Kubernetes restored the previous Pod template and scaled its ReplicaSet back up.
+
+## Lessons Learned
+
+- A Deployment manages application releases through ReplicaSets.
+- Changing the Pod template creates a new Deployment revision.
+- A rolling update gradually replaces old Pods with new Pods.
+- The old ReplicaSet is retained to support rollback.
+- A rollback restores a previous Pod-template configuration.
+- A stable Service continues selecting healthy Pods even when the underlying ReplicaSets and Pod IP addresses change.
+- The container name must be specified correctly when using `kubectl set image`.
+- Deployment revisions track changes to the Pod template, not changes to the Service.
+
+## Key Takeaways
+
+Kubernetes separates application networking from application releases:
+
+```text
+Stable Service
+      |
+Changing healthy Pods
+      |
+Deployment revisions and ReplicaSets
+```
+
+This allows clients to continue using the same Service name while Kubernetes updates or restores the application workload.
+
+## Next Session
+
+Configure application settings externally using Kubernetes ConfigMaps.
