@@ -148,3 +148,78 @@ Pods are ephemeral and should not be relied upon individually.
 Kubernetes continuously reconciles actual state with desired state.
 Declarative configuration (YAML) is the source of truth, while imperative commands such as kubectl scale modify the live cluster.
 
+# Session 4 – Services and Service Discovery
+
+## Goal
+
+Understand how Kubernetes Services provide stable networking for dynamic Pods and learn how applications discover one another inside the cluster.
+
+## Architecture
+
+Deployment
+↓
+ReplicaSet
+↓
+Pods
+↑
+Service
+↑
+Kubernetes DNS
+
+## Tasks Completed
+
+- Created the first ClusterIP Service.
+- Applied `frontend-service.yaml`.
+- Verified the Service received a ClusterIP.
+- Learned how Services use label selectors.
+- Verified the Service discovered frontend Pods automatically.
+- Used Kubernetes DNS to reach the application by Service name.
+- Tested connectivity from a temporary BusyBox Pod.
+- Observed the temporary Pod being removed automatically.
+- Verified the Service continued routing traffic after Pod replacement.
+
+## Commands Used
+
+```bash
+kubectl apply -f kubernetes/base/frontend-service.yaml
+
+kubectl get svc
+
+kubectl describe service securecart-service
+
+kubectl get endpointslices
+
+kubectl run service-test \
+  --image=busybox:1.36 \
+  --restart=Never \
+  --rm -it \
+  -- wget -qO- http://securecart-service
+
+kubectl get pods
+```
+
+## Challenges
+
+Understanding how a Service can locate Pods without using Pod names or Pod IP addresses.
+
+## Lessons Learned
+
+- Pod IP addresses are ephemeral and change when Pods are recreated.
+- Services provide a stable virtual IP and DNS name.
+- Services discover Pods using label selectors.
+- Kubernetes DNS allows workloads to communicate using Service names.
+- EndpointSlices maintain the list of healthy backend Pods for a Service.
+- Clients communicate with Services rather than individual Pods.
+
+## Key Takeaways
+
+- Deployments manage application lifecycle.
+- ReplicaSets maintain the desired number of Pods.
+- Services provide stable networking.
+- Labels connect Services to Pods.
+- DNS makes Service discovery transparent to applications.
+
+## Next Session
+
+Perform rolling updates and rollbacks to deploy new application versions with zero downtime.
+

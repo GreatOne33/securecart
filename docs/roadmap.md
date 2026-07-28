@@ -1,4 +1,3 @@
-```markdown
 # SecureCart Roadmap
 
 ## Phase 1 - Kubernetes Fundamentals
@@ -10,9 +9,17 @@
 - [x] Install Helm
 - [x] Create GitHub repository
 - [x] Create Kind cluster
-- [X] Deploy first Pod
-- [X] Create Deployment
-- [ ] Create Service
+- [x] Deploy first Pod
+- [x] Create Deployment
+- [x] Understand ReplicaSets
+- [x] Demonstrate Kubernetes self-healing
+- [x] Scale Deployments
+- [x] Create ClusterIP Service
+- [x] Understand label selectors
+- [x] Verify Kubernetes service discovery
+- [x] Test Kubernetes DNS resolution
+- [ ] Perform Rolling Updates
+- [ ] Perform Rollbacks
 - [ ] Configure Ingress
 - [ ] Configure ConfigMaps
 - [ ] Configure Secrets
@@ -24,36 +31,44 @@
 
 ## Phase 2 - Application
 
+- [ ] Build custom SecureCart frontend
 - [ ] Containerize frontend
-- [ ] Containerize API
+- [ ] Build backend API
+- [ ] Containerize backend
 - [ ] Connect frontend to backend
-- [ ] Persistent storage
+- [ ] Deploy PostgreSQL
+- [ ] Configure Persistent Volumes
+- [ ] Configure Persistent Volume Claims
 
 ---
 
 ## Phase 3 - DevOps
 
-- [ ] GitHub Actions
-- [ ] Docker image publishing
-- [ ] Helm deployment
+- [ ] Build Docker images
+- [ ] Publish images to registry
+- [ ] Create Helm chart
+- [ ] Configure GitHub Actions
 - [ ] Automated testing
+- [ ] Automated Kubernetes deployments
 
 ---
 
 ## Phase 4 - AWS
 
-- [ ] Terraform networking
-- [ ] IAM
-- [ ] ECR
-- [ ] EKS
-- [ ] AWS Load Balancer Controller
+- [ ] Provision infrastructure with Terraform
+- [ ] Configure IAM
+- [ ] Deploy Amazon ECR
+- [ ] Deploy Amazon EKS
+- [ ] Configure AWS Load Balancer Controller
+- [ ] Deploy SecureCart to AWS
 
 ---
 
 ## Phase 5 - Production
 
-- [ ] Monitoring
-- [ ] Logging
-- [ ] Autoscaling
-- [ ] Security hardening
-- [ ] Cost optimization
+- [ ] Horizontal Pod Autoscaler
+- [ ] Monitoring (Prometheus)
+- [ ] Dashboards (Grafana)
+- [ ] Centralized Logging
+- [ ] Security Hardening
+- [ ] Cost Optimization
