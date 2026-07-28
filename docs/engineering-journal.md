@@ -44,7 +44,6 @@ Resolution:
 kind version
 
 
-
 ### Lessons Learned
 
 - Expanding a VMware virtual disk requires both resizing the guest partition and the filesystem.
@@ -55,3 +54,33 @@ kind version
 
 - Deploy the first Kubernetes workload.
 - Learn Pods and Deployments.
+
+## Session 2 - First Kubernetes Pod
+
+### Goal
+
+Deploy and inspect the first SecureCart workload on the local Kind cluster.
+
+### Completed
+
+- Created a Kubernetes Pod manifest for the SecureCart frontend.
+- Deployed an NGINX container to the cluster.
+- Verified the Pod reached the Running and Ready states.
+- Inspected Pod scheduling, container status, and Kubernetes events.
+- Tested the application using kubectl port forwarding.
+- Deleted the standalone Pod and confirmed Kubernetes did not recreate it.
+
+### Lessons Learned
+
+- A Pod is Kubernetes' smallest deployable workload unit.
+- Labels provide metadata that other Kubernetes resources can use to identify workloads.
+- Declaring a container port does not expose the workload outside the Pod.
+- Port forwarding provides temporary local access for testing.
+- A standalone Pod is not automatically recreated after deletion.
+- Deployments provide workload reconciliation and self-healing behavior.
+
+### Next
+
+- Replace the standalone Pod with a Deployment.
+- Configure replicas.
+- Test Kubernetes workload recovery.

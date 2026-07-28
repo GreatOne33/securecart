@@ -10,7 +10,7 @@
 - [x] Install Helm
 - [x] Create GitHub repository
 - [x] Create Kind cluster
-- [ ] Deploy first Pod
+- [X] Deploy first Pod
 - [ ] Create Deployment
 - [ ] Create Service
 - [ ] Configure Ingress
