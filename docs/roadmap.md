@@ -11,7 +11,7 @@
 - [x] Create GitHub repository
 - [x] Create Kind cluster
 - [X] Deploy first Pod
-- [ ] Create Deployment
+- [X] Create Deployment
 - [ ] Create Service
 - [ ] Configure Ingress
 - [ ] Configure ConfigMaps

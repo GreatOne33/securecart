@@ -1,0 +1,26 @@
+apiVersion: apps/v1  
+kind: Deployment 
+metadata: 
+  name: securecart-frontend
+  labels: 
+    app: securecart 
+spec: 
+  replicas: 1 
+
+  selector: 
+    matchLabels:
+      app: securecart  
+      component: frontend 
+
+  template: 
+    metadata:  
+      labels:  
+        app: securecart  
+        component: frontend 
+    spec: 
+      containers: 
+        - name: frontend 
+          image: nginx:1.27-alpine 
+
+          ports: 
+            - containerPort: 80 

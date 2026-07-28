@@ -43,6 +43,8 @@ Resolution:
 ```bash
 kind version
 
+``` bash
+
 
 ### Lessons Learned
 
@@ -84,3 +86,65 @@ Deploy and inspect the first SecureCart workload on the local Kind cluster.
 - Replace the standalone Pod with a Deployment.
 - Configure replicas.
 - Test Kubernetes workload recovery.
+
+# Session 3 – Deployments, ReplicaSets, and Self-Healing
+
+## Goal
+
+Replace the standalone Pod with a Deployment and understand how Kubernetes maintains desired state.
+
+## Completed
+
+- Deleted the standalone Pod.
+- Created `frontend-deployment.yaml`.
+- Learned the relationship between Deployment, ReplicaSet, and Pod.
+- Applied the Deployment to the Kind cluster.
+- Verified Deployment, ReplicaSet, and Pod resources using `kubectl`.
+- Deleted a running Pod and observed Kubernetes automatically create a replacement.
+- Scaled the Deployment from one replica to three replicas.
+- Observed additional Pods transition through Pending, ContainerCreating, and Running.
+- Scaled the Deployment back to one replica.
+
+## Key Concepts Learned
+
+### Desired State
+
+A Deployment does not manage individual Pods directly. Instead, it defines the desired number of replicas, and Kubernetes continuously reconciles the actual state with the desired state.
+
+### ReplicaSet
+
+The ReplicaSet monitors the number of running Pods. If a Pod is deleted or fails, it creates a replacement to maintain the configured replica count.
+
+### Self-Healing
+
+Deleting a Pod does not impact the Deployment. Kubernetes automatically creates a new Pod to restore the desired state.
+
+### Scaling
+
+Increasing the replica count creates additional Pods automatically. Decreasing the replica count removes excess Pods while maintaining application availability.
+
+## Commands Used
+
+```bash
+kubectl apply -f kubernetes/base/frontend-deployment.yaml
+kubectl get deployments
+kubectl get rs
+kubectl get pods
+kubectl get pods --watch
+kubectl delete pod <pod-name>
+kubectl scale deployment securecart-frontend --replicas=3
+kubectl scale deployment securecart-frontend --replicas=1
+``` bash
+
+### Challenges
+
+Understanding how Deployments, ReplicaSets, and Pods relate to one another before seeing them in action.
+
+### Lessons Learned
+Pods should generally be managed by a Deployment.
+Deployments define the desired state of an application.
+ReplicaSets enforce the desired number of Pods.
+Pods are ephemeral and should not be relied upon individually.
+Kubernetes continuously reconciles actual state with desired state.
+Declarative configuration (YAML) is the source of truth, while imperative commands such as kubectl scale modify the live cluster.
+
