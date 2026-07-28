@@ -205,7 +205,6 @@ kubectl run service-test \
 
 ```bash
 kind delete cluster --name securecart
-
 ```
 
 ---
