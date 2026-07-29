@@ -360,3 +360,66 @@ The init container also runs only when a Pod starts, so the generated HTML is no
 - `emptyDir` volumes allow containers in the same Pod to share generated files
 - The Downward API can expose Kubernetes metadata to an application
 
+# Session 7: Kubernetes Secrets
+
+**Date:** July 29, 2026
+
+**Milestone:** SecureCart v0.2.0
+
+**Status:** Completed
+
+## Objective
+
+Implement Kubernetes Secrets to securely manage sensitive application configuration and understand how applications consume sensitive data in Kubernetes.
+
+## Implementation
+
+Created an Opaque Kubernetes Secret using placeholder values for:
+
+- DATABASE_USERNAME
+- DATABASE_PASSWORD
+- API_KEY
+
+Applied the Secret to the cluster and verified it using:
+
+- `kubectl get secrets`
+- `kubectl describe secret`
+
+Observed that `kubectl describe` displays the Secret keys and their sizes, but not the stored values.
+
+## Validation
+
+Validated that:
+
+- Secret values can be injected through `secretKeyRef`
+- `kubectl describe secret` does not display the stored values
+- Sensitive values can be verified without printing them
+- Environment variables are scoped to individual containers
+- Kubernetes Secrets can also be mounted as read-only volumes
+- Mounted Secrets create one file per Secret key
+- Secret volumes are mounted as symbolic links managed by Kubernetes
+
+## Security Concepts Learned
+
+- Kubernetes Secrets are Base64 encoded, not encrypted.
+- Production clusters should enable encryption at rest.
+- RBAC controls access to Kubernetes Secrets.
+- Secrets should only be injected into containers that require them.
+
+## Engineering Decision
+
+For the current frontend-only architecture, Secret values were temporarily injected into the frontend container to validate Secret consumption.
+
+After validation, the Secret references were removed from the frontend Deployment because the NGINX container does not require database credentials or API keys.
+
+This follows the Principle of Least Privilege and keeps the Deployment aligned with production security practices.
+
+## Lessons Learned
+
+- ConfigMaps should be used for non-sensitive configuration.
+- Secrets should be used for sensitive application configuration.
+- Kubernetes supports two primary methods of consuming Secrets:
+  - Environment variables
+  - Read-only mounted volumes
+- Temporary validation configurations should be removed once testing is complete.
+

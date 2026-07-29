@@ -4,6 +4,7 @@ metadata:
   name: securecart-frontend
   labels:
     app: securecart
+
 spec:
   replicas: 3
 
@@ -57,15 +58,30 @@ spec:
           ports:
             - containerPort: 80
 
-          envFrom:
-            - configMapRef:
-                name: securecart-config
-
           env:
-            - name: POD_NAME
+            - name: APP_NAME
               valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
+                configMapKeyRef:
+                  name: securecart-config
+                  key: APP_NAME
+
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: securecart-config
+                  key: ENVIRONMENT
+
+            - name: VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: securecart-config
+                  key: VERSION
+
+            - name: COMPANY
+              valueFrom:
+                configMapKeyRef:
+                  name: securecart-config
+                  key: COMPANY
 
           volumeMounts:
             - name: generated-content

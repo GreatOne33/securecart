@@ -1,0 +1,28 @@
+{
+  "files.associations": {
+    "*.yaml": "yaml",
+    "*.yml": "yaml"
+  },
+  "yaml.schemas": {
+    "kubernetes": [
+      "kubernetes/**/*.yaml",
+      "kubernetes/**/*.yml"
+    ],
+    "https://json.schemastore.org/kind-config.json": [
+      "kind/**/*.yaml",
+      "kind/**/*.yml"
+    ]
+  },
+  "yaml.schemaStore.enable": true,
+  "yaml.format.enable": true,
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml",
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2,
+    "editor.autoIndent": "advanced"
+  },
+  "vs-kubernetes": {
+    "vs-kubernetes.crd-code-completion": "enabled",
+    "vs-kubernetes.disable-lint": false
+  }
+}

@@ -29,12 +29,8 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 
 ## ✨ Current Features
 
-- Multi-replica Kubernetes Deployment
-- ClusterIP Service
-- Kubernetes DNS
-- Rolling Updates
-- Rollbacks
 - ConfigMap-driven configuration
+- Kubernetes Secrets
 - Dynamic HTML generation
 - Init Containers
 - Downward API
@@ -70,6 +66,9 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 ### Configuration
 
 - [x] ConfigMaps
+- [x] Kubernetes Secrets
+- [x] Secret Environment Variables
+- [x] Secret Volume Mounts
 - [x] Init Containers
 - [x] emptyDir Volumes
 - [x] Downward API
@@ -77,11 +76,10 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 
 ### Next
 
-- [ ] Secrets
 - [ ] Health Probes
 - [ ] Ingress
 - [ ] Network Policies
-- [ ] Resource Limits
+- [ ] Resource Requests & Limits
 
 ---
 
@@ -102,10 +100,10 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 │  3 replicas                                              │
 │      │                                                   │
 │      ├── Init Container                                  │
-│      │     ├── Reads HTML template ConfigMap             │
-│      │     ├── Reads application ConfigMap               │
-│      │     ├── Reads Pod name through Downward API       │
-│      │     └── Writes rendered HTML to emptyDir          │
+│      │     ├── Reads HTML template ConfigMap
+             ├── Reads application ConfigMap
+             ├── Reads Pod metadata (Downward API)
+             └── Renders application content       │
 │      │                                                   │
 │      └── NGINX Container                                 │
 │            └── Serves rendered HTML from emptyDir        │
@@ -177,6 +175,7 @@ kubectl cluster-info --context kind-securecart
 
 ```bash
 kubectl apply -f kubernetes/base/configmap.yaml
+kubectl apply -f kubernetes/base/secrets/secret.yaml
 kubectl apply -f kubernetes/base/frontend-content.yaml
 kubectl apply -f kubernetes/base/frontend-deployment.yaml
 kubectl apply -f kubernetes/base/frontend-service.yaml
@@ -189,6 +188,7 @@ kubectl rollout status deployment/securecart-frontend
 kubectl get pods
 kubectl get services
 kubectl get configmaps
+kubectl get secrets
 
 ```
 
@@ -241,13 +241,13 @@ Project documentation is maintained throughout development.
 
 ## 🚀 Current Focus
 
-**Current milestone:** Kubernetes Secrets
+**Current milestone:** Health Probes
 
 Upcoming work:
 
-- Add health probes
 - Configure Ingress
-- Add resource requests and limits
+- Enable HTTPS/TLS
+- Configure Resource Requests & Limits
 - Configure NetworkPolicies
 
 **Long-term goal:** Deploy SecureCart to Amazon EKS using Terraform, Helm, and GitHub Actions.

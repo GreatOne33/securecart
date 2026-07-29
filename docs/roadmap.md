@@ -26,19 +26,24 @@
 
 ### Configuration Management
 
+### Configuration Management
+
 - [x] Configure ConfigMaps
 - [x] Build custom SecureCart frontend
 - [x] Render HTML using Init Containers
 - [x] Use emptyDir shared volumes
 - [x] Inject Pod metadata with the Downward API
 - [x] Demonstrate ConfigMap updates
+- [x] Configure Kubernetes Secrets
+- [x] Validate Secret environment variables
+- [x] Validate Secret volume mounts
+- [x] Apply Principle of Least Privilege
 
-### Next
+### Platform Hardening
 
-- [ ] Configure Secrets
 - [ ] Add Health Probes
 - [ ] Configure Ingress
-- [ ] Add Resource Limits
+- [ ] Configure Resource Requests & Limits
 - [ ] Configure NetworkPolicies
 
 ---
@@ -66,13 +71,16 @@
 
 ---
 
-## Phase 4 - AWS
+### Phase 4 - AWS
 
 - [ ] Provision infrastructure with Terraform
-- [ ] Configure IAM
+- [ ] Configure IAM Roles
+- [ ] Create VPC Networking
 - [ ] Deploy Amazon ECR
 - [ ] Deploy Amazon EKS
 - [ ] Configure AWS Load Balancer Controller
+- [ ] External DNS
+- [ ] HTTPS Certificates (ACM)
 - [ ] Deploy SecureCart to AWS
 
 ---
