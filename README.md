@@ -100,15 +100,15 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 │  3 replicas                                              │
 │      │                                                   │
 │      ├── Init Container                                  │
-│      │     ├── Reads HTML template ConfigMap
-             ├── Reads application ConfigMap
-             ├── Reads Pod metadata (Downward API)
-             └── Renders application content       │
+│      │     ├── Reads HTML template ConfigMap             │
+│      │     ├── Reads application ConfigMap               │
+│      │     ├── Reads Pod metadata through Downward API   │
+│      │     └── Renders HTML into emptyDir                │
 │      │                                                   │
 │      └── NGINX Container                                 │
 │            └── Serves rendered HTML from emptyDir        │
-│                                                          │
 └──────────────────────────────────────────────────────────┘
+
 ```
 
 ---
@@ -244,10 +244,11 @@ Project documentation is maintained throughout development.
 
 ## 🚀 Current Focus
 
-**Current milestone:** Health Probes
+**Current milestone:** Secrets
 
 Upcoming work:
 
+- Health Probes
 - Configure Ingress
 - Enable HTTPS/TLS
 - Configure Resource Requests & Limits
