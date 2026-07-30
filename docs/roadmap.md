@@ -26,8 +26,6 @@
 
 ### Configuration Management
 
-### Configuration Management
-
 - [x] Configure ConfigMaps
 - [x] Build custom SecureCart frontend
 - [x] Render HTML using Init Containers
@@ -43,6 +41,7 @@
 
 - [ ] Add Health Probes
 - [ ] Configure Ingress
+- [ ] Enable HTTPS/TLS
 - [ ] Configure Resource Requests & Limits
 - [ ] Configure NetworkPolicies
 
@@ -71,7 +70,7 @@
 
 ---
 
-### Phase 4 - AWS
+## Phase 4 - AWS
 
 - [ ] Provision infrastructure with Terraform
 - [ ] Configure IAM Roles

@@ -132,8 +132,11 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - Deployments
 - Services
 - ConfigMaps
+- Secrets
 - Init Containers
 - ReplicaSets
+- Downward API
+- emptyDir Volumes
 
 ### Infrastructure as Code
 
