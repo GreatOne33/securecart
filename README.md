@@ -29,11 +29,18 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 
 ## ✨ Current Features
 
+- Multi-replica Kubernetes Deployment
+- ClusterIP Service
+- Kubernetes DNS
+- Rolling Updates
+- Rollbacks
 - ConfigMap-driven configuration
 - Kubernetes Secrets
 - Dynamic HTML generation
 - Init Containers
 - Downward API
+- Startup, readiness, and liveness probes
+- Application-aware Service traffic management
 - Production-style documentation
 
 ---
@@ -74,12 +81,20 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] Downward API
 - [x] Dynamic SecureCart Frontend
 
+### Reliability
+
+- [x] Startup Probes
+- [x] Readiness Probes
+- [x] Liveness Probes
+- [x] Service endpoint health management
+- [x] Container restart validation
+
 ### Next
 
-- [ ] Health Probes
 - [ ] Ingress
-- [ ] Network Policies
+- [ ] HTTPS/TLS
 - [ ] Resource Requests & Limits
+- [ ] NetworkPolicies
 
 ---
 
@@ -184,6 +199,29 @@ kubectl apply -f kubernetes/base/frontend-deployment.yaml
 kubectl apply -f kubernetes/base/frontend-service.yaml
 ```
 
+## Health Probes
+
+SecureCart uses three Kubernetes health probes to improve application reliability.
+
+| Probe | Purpose |
+|--------|---------|
+| Startup | Prevents readiness and liveness checks until the application has started successfully. |
+| Readiness | Determines when a Pod is ready to receive Service traffic. |
+| Liveness | Restarts the container if the application becomes unhealthy. |
+
+### Verify the probes
+
+```bash
+kubectl describe pod <pod-name> | grep -E "Startup|Readiness|Liveness"
+```
+
+```bash
+kubectl get endpointslice \
+  -l kubernetes.io/service-name=securecart-service \
+  -o wide
+  
+```
+
 ### Verify the deployment
 
 ```bash
@@ -242,14 +280,14 @@ Project documentation is maintained throughout development.
 
 ---
 
-## 🚀 Current Focus
+### 🚀 Current Focus
 
-**Current milestone:** Secrets
+**Current milestone:** Kubernetes Ingress
 
 Upcoming work:
 
-- Health Probes
-- Configure Ingress
+- Expose SecureCart through an Ingress Controller
+- Configure host-based routing
 - Enable HTTPS/TLS
 - Configure Resource Requests & Limits
 - Configure NetworkPolicies

@@ -423,3 +423,94 @@ This follows the Principle of Least Privilege and keeps the Deployment aligned w
   - Read-only mounted volumes
 - Temporary validation configurations should be removed once testing is complete.
 
+## Session 8 - Kubernetes Health Probes
+
+**Milestone:** Application Health and Reliability  
+**Status:** Completed
+
+### Objective
+
+Configure Kubernetes health probes for the SecureCart frontend and validate how Kubernetes manages startup, Service traffic, container restarts, and application recovery.
+
+### Implementation
+
+Added HTTP-based probes to the `frontend` container:
+
+- Startup probe
+- Readiness probe
+- Liveness probe
+
+All probes check the NGINX root path on port 80.
+
+The startup probe allows approximately 60 seconds for initialization before Kubernetes considers startup unsuccessful.
+
+### Readiness Validation
+
+The served `index.html` file was temporarily renamed inside one frontend Pod.
+
+Observed behavior:
+
+- The NGINX process remained running.
+- The readiness probe returned HTTP 403.
+- The Pod changed from Ready to NotReady.
+- The container was not restarted.
+- The Pod IP was removed from the Service EndpointSlice.
+- Healthy replicas continued receiving traffic.
+
+After restoring the file:
+
+- The readiness probe succeeded.
+- The Pod returned to Ready.
+- Its IP was automatically restored to the Service EndpointSlice.
+
+### Liveness Validation
+
+The frontend content was intentionally broken again after configuring the liveness probe.
+
+Observed behavior:
+
+- Readiness failed and removed the Pod from Service traffic.
+- Liveness failed repeatedly.
+- Kubernetes restarted the frontend container.
+- The Init Container did not run again because the Pod was not recreated.
+- The `emptyDir` volume survived the container restart.
+- The broken content remained in the shared volume.
+- Repeated failures caused the container to enter `CrashLoopBackOff`.
+
+The Pod was then deleted manually.
+
+The ReplicaSet created a replacement Pod with:
+
+- A fresh `emptyDir` volume
+- A rerun of the Init Container
+- Regenerated frontend content
+- Successful health probes
+- Restoration to the Service EndpointSlice
+
+### Startup Probe Validation
+
+Configured a startup probe to check the frontend every five seconds with a failure threshold of twelve.
+
+This allows approximately sixty seconds for application initialization.
+
+Once the startup probe succeeds, Kubernetes begins executing the readiness and liveness probes.
+
+### Engineering Decisions
+
+- Used HTTP probes because SecureCart currently serves content through NGINX.
+- Used the root path for the current frontend because no dedicated health endpoint exists yet.
+- Kept startup, readiness, and liveness probes together for learning and demonstration.
+- Retained initial delays for readiness and liveness to make each probe configuration explicit.
+- Recognized that the startup probe is more valuable for the future backend API than for the fast-starting NGINX frontend.
+
+### Lessons Learned
+
+- A running container is not necessarily a healthy application.
+- Readiness failures remove Pods from Service traffic without restarting them.
+- Liveness failures restart containers.
+- Container restart does not recreate the Pod.
+- `emptyDir` survives container restarts but is deleted when the Pod is removed.
+- Init Containers rerun only when a new Pod is created.
+- Liveness probes cannot repair persistent broken state.
+- EndpointSlice is the modern API for viewing Service backends.
+

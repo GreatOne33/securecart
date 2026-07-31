@@ -39,7 +39,7 @@
 
 ### Platform Hardening
 
-- [ ] Add Health Probes
+- [x] Configure Startup, Readiness, and Liveness Probes
 - [ ] Configure Ingress
 - [ ] Enable HTTPS/TLS
 - [ ] Configure Resource Requests & Limits
