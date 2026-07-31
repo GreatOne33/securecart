@@ -503,6 +503,19 @@ Once the startup probe succeeds, Kubernetes begins executing the readiness and l
 - Retained initial delays for readiness and liveness to make each probe configuration explicit.
 - Recognized that the startup probe is more valuable for the future backend API than for the fast-starting NGINX frontend.
 
+### Commands Used
+kubectl describe pod <pod-name> | grep -E "Startup|Readiness|Liveness"
+
+kubectl get endpointslice \
+  -l kubernetes.io/service-name=securecart-service \
+  -o wide
+
+kubectl exec <pod-name> -- \
+  mv /usr/share/nginx/html/index.html \
+     /usr/share/nginx/html/index.html.disabled
+
+kubectl delete pod <pod-name>
+
 ### Lessons Learned
 
 - A running container is not necessarily a healthy application.

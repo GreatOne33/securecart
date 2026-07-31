@@ -1,4 +1,10 @@
-## Health Probe Strategy
+# SecureCart Design Decisions
+
+This document records important architectural and engineering decisions made during SecureCart development.
+
+---
+
+## ADR-001: Health Probe Strategy
 
 SecureCart uses HTTP-based startup, readiness, and liveness probes for the frontend NGINX container.
 

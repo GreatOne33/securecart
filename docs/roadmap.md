@@ -40,9 +40,9 @@
 ### Platform Hardening
 
 - [x] Configure Startup, Readiness, and Liveness Probes
+- [ ] Configure Resource Requests & Limits
 - [ ] Configure Ingress
 - [ ] Enable HTTPS/TLS
-- [ ] Configure Resource Requests & Limits
 - [ ] Configure NetworkPolicies
 
 ---

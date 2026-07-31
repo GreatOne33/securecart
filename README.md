@@ -199,6 +199,17 @@ kubectl apply -f kubernetes/base/frontend-deployment.yaml
 kubectl apply -f kubernetes/base/frontend-service.yaml
 ```
 
+### Verify the deployment
+
+```bash
+kubectl rollout status deployment/securecart-frontend
+kubectl get pods
+kubectl get services
+kubectl get configmaps
+kubectl get secrets
+
+```
+
 ## Health Probes
 
 SecureCart uses three Kubernetes health probes to improve application reliability.
@@ -209,7 +220,7 @@ SecureCart uses three Kubernetes health probes to improve application reliabilit
 | Readiness | Determines when a Pod is ready to receive Service traffic. |
 | Liveness | Restarts the container if the application becomes unhealthy. |
 
-### Verify the probes
+### Verify health probes
 
 ```bash
 kubectl describe pod <pod-name> | grep -E "Startup|Readiness|Liveness"
@@ -220,17 +231,6 @@ kubectl get endpointslice \
   -l kubernetes.io/service-name=securecart-service \
   -o wide
   
-```
-
-### Verify the deployment
-
-```bash
-kubectl rollout status deployment/securecart-frontend
-kubectl get pods
-kubectl get services
-kubectl get configmaps
-kubectl get secrets
-
 ```
 
 ### Test the application internally
