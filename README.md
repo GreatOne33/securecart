@@ -49,7 +49,8 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - Host-based Routing
 - HTTPS/TLS
 - HTTP → HTTPS Redirect
-- Trusted Local TLS Certificate
+- Locally generated TLS certificate
+- System trust-store validation with curl
 
 ---
 
@@ -124,23 +125,24 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 
 ```text
                          Kubernetes Cluster
-                              Browser
-                                 │
-                           HTTPS (443)
-                                 │
-                                 ▼
-                    NGINX Ingress Controller
-                        TLS Termination
-                                 │
-                                 ▼
-                      securecart-ingress
-                                 │
-                                 ▼
-                 securecart-service (ClusterIP)
-                                 │
-              ┌──────────────────┼──────────────────┐
-              ▼                  ▼                  ▼
-      securecart-frontend  securecart-frontend  securecart-frontend
+
+                               Browser
+                                  │
+                            HTTPS :443
+                                  │
+                                  ▼
+                     NGINX Ingress Controller
+                         TLS Termination
+                                  │
+                                  ▼
+                       securecart-ingress
+                                  │
+                                  ▼
+                  securecart-service (ClusterIP)
+                                  │
+               ┌──────────────────┼──────────────────┐
+               ▼                  ▼                  ▼
+        Frontend Pod       Frontend Pod       Frontend Pod
 
 ```
 
@@ -170,6 +172,12 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - ReplicaSets
 - Downward API
 - emptyDir Volumes
+- Ingress
+- IngressClass
+- TLS Secrets
+- EndpointSlices
+- Resource Requests and Limits
+- Health Probes
 
 ### Infrastructure as Code
 
@@ -262,6 +270,82 @@ kubectl run service-test \
 
 ```
 
+### Install the Ingress Controller
+```
+kubectl apply -f \
+  https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+
+kubectl wait \
+  --namespace ingress-nginx \
+  --for=condition=Ready \
+  pod \
+  --selector=app.kubernetes.io/component=controller \
+  --timeout=180s
+
+```
+### Pin the Controller to the Mapped Node
+```
+kubectl label node securecart-control-plane \
+  ingress-ready=true \
+  --overwrite
+
+kubectl patch deployment ingress-nginx-controller \
+  -n ingress-nginx \
+  --type=merge \
+  -p '{
+    "spec": {
+      "template": {
+        "spec": {
+          "nodeSelector": {
+            "kubernetes.io/os": "linux",
+            "ingress-ready": "true"
+          }
+        }
+      }
+    }
+  }'
+
+```
+### Verify the Ingress Controller
+```
+kubectl rollout status deployment/ingress-nginx-controller \
+  -n ingress-nginx
+
+kubectl get pods -n ingress-nginx -o wide
+
+```
+### Generate Local TLS Material
+```
+mkdir -p .local/tls
+
+openssl req \
+  -x509 \
+  -nodes \
+  -newkey rsa:2048 \
+  -sha256 \
+  -days 365 \
+  -keyout .local/tls/securecart.local.key \
+  -out .local/tls/securecart.local.crt \
+  -subj "/CN=securecart.local/O=SecureCart" \
+  -addext "subjectAltName=DNS:securecart.local"
+
+  ```
+  Create the TLS Secret
+
+  ```
+  kubectl create secret tls securecart-tls \
+  --cert=.local/tls/securecart.local.crt \
+  --key=.local/tls/securecart.local.key
+
+  ```
+  Apply the Ingress
+  ```
+
+  kubectl apply -f kubernetes/base/frontend-ingress.yaml
+
+  ```
+
+
 #### Configure Local Hostname
 
 ```bash
@@ -280,20 +364,15 @@ sudo update-ca-certificates
 
 ### Access SecureCart
 
-HTTP
+- HTTP: `http://securecart.local`
+- HTTPS: `https://securecart.local`
 
-```
+> The local self-signed certificate may still display a browser warning. TLS termination and certificate validation were confirmed with `curl` and `openssl`.
 
-http://securecart.local
+### Delete the local cluster
 
-```
-
-HTTPS
-
-```
-
-https://securecart.local
-
+```bash
+kind delete cluster --name securecart
 ```
 
 ```
@@ -334,16 +413,16 @@ Project documentation is maintained throughout development.
 
 ---
 
-### 🚀 Current Focus
+## 🚀 Current Focus
 
-**Current milestone:** Secure HTTPS access through NGINX Ingress
+**Current milestone:** Kubernetes NetworkPolicies
 
 Upcoming work:
 
-- Expose SecureCart through an Ingress Controller
-- Configure host-based routing
-- Enable HTTPS/TLS
-- Configure NetworkPolicies
+- Establish default-deny network isolation
+- Permit only required Ingress-to-frontend traffic
+- Validate blocked and allowed communication paths
+- Document least-privilege network controls
 
 **Long-term goal:** Deploy SecureCart to Amazon EKS using Terraform, Helm, and GitHub Actions.
 

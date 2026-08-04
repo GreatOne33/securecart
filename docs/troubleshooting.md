@@ -1,3 +1,5 @@
+# SecureCart Troubleshooting Guide
+
 ## Connection reset after recreating the Kind cluster
 
 ### Symptoms

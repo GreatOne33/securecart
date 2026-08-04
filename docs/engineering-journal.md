@@ -571,7 +571,7 @@ Verified:
 
 ### Validation commands included:
 
-```
+``` bash
 kubectl describe pod <pod-name>
 
 kubectl get deployment securecart-frontend \
@@ -622,14 +622,6 @@ Requests, limits, scheduling, and QoS remain fully functional without Metrics Se
 
 Runtime utilization will be explored during the Monitoring and Autoscaling milestones.
 
-### Engineering Decisions 
-
-- Engineering Decisions
-- Used conservative resource requests appropriate for a lightweight NGINX frontend.
-- Allowed CPU bursting while reserving predictable minimum resources.
-- Used Burstable QoS to balance scheduling guarantees with efficient cluster utilization.
-- Deferred Metrics Server installation until the Monitoring phase.
-
 ### Lessons Learned
 - Requests influence scheduling.
 - Limits restrict maximum resource usage.
@@ -640,7 +632,11 @@ Runtime utilization will be explored during the Monitoring and Autoscaling miles
 
 ## Session 10 — Kubernetes Ingress & TLS
 
-Objective
+**Milestone:** Ingress and Secure Traffic Management
+
+**Status:** Completed
+
+### Objective
 
 - Expose SecureCart through an NGINX Ingress Controller and secure external traffic using HTTPS.
 
@@ -666,7 +662,7 @@ Verified:
 - SecureCart is accessible through both curl and a web browser
 
 ### Commands used:
-```
+``` bash
 curl -I https://securecart.local
 
 curl -I http://securecart.local
@@ -682,8 +678,10 @@ openssl s_client \
 Initial connection failures
 
 After recreating the Kind cluster, requests to securecart.local returned:
+``` text
 
   Recv failure: Connection reset by peer 
+```
 
 Root cause:
 

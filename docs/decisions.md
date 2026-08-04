@@ -37,3 +37,14 @@ Current frontend allocation:
 
 These values are intentionally conservative for the lightweight frontend and will be revisited after Metrics Server and application monitoring are introduced.
 
+---
+
+## ADR-003: Ingress and TLS Strategy
+
+SecureCart uses the NGINX Ingress Controller for host-based HTTP and HTTPS routing.
+
+Kind maps host ports 80 and 443 into the control-plane node. The Ingress Controller is scheduled onto that same node so incoming traffic reaches its host ports.
+
+TLS terminates at the Ingress Controller. The controller forwards HTTP traffic internally to the ClusterIP Service.
+
+A self-signed certificate is used for local development. Production deployments will use a trusted certificate authority through AWS Certificate Manager or cert-manager.
