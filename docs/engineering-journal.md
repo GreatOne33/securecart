@@ -527,3 +527,110 @@ kubectl delete pod <pod-name>
 - Liveness probes cannot repair persistent broken state.
 - EndpointSlice is the modern API for viewing Service backends.
 
+## Session 9 - Resource Requests & Limits
+
+**Milestone:** Kubernetes Resource Management
+
+**Status:** Completed
+
+---
+
+### Objective
+
+Configure CPU and memory requests and limits for the SecureCart frontend to improve scheduling decisions, resource management, and workload reliability.
+
+---
+
+### Implementation
+
+Added resource requests and limits to the frontend Deployment.
+
+```yaml
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+
+  limits:
+    cpu: "250m"
+    memory: "256Mi"
+
+```
+
+### Validation
+
+---
+
+Verified:
+
+Deployment rolled out successfully
+New ReplicaSet created
+Resources stored in Deployment
+Requests and limits applied to Pods
+QoS changed from BestEffort to Burstable
+
+### Validation commands included:
+
+kubectl describe pod <pod-name>
+
+kubectl get deployment securecart-frontend \
+  -o jsonpath='{.spec.template.spec.containers[0].resources}'
+
+### Observations
+
+---
+
+Before this change:
+
+QoS Class: BestEffort
+
+After configuring requests and limits:
+
+QoS Class: Burstable
+
+The scheduler now reserves:
+
+  100m CPU
+  128Mi Memory
+
+Each container may burst up to:
+
+  250m CPU
+  256Mi Memory
+
+--- 
+
+Metrics
+
+Attempted to inspect runtime usage with:
+
+```
+kubectl top pods
+
+```
+
+### Result:
+  Metrics API not available
+
+The local Kind cluster does not include Metrics Server by default.
+
+Requests, limits, scheduling, and QoS remain fully functional without Metrics Server.
+
+Runtime utilization will be explored during the Monitoring and Autoscaling milestones.
+
+### Engineering Decisions 
+
+- Engineering Decisions
+- Used conservative resource requests appropriate for a lightweight NGINX frontend.
+- Allowed CPU bursting while reserving predictable minimum resources.
+- Used Burstable QoS to balance scheduling guarantees with efficient cluster utilization.
+- Deferred Metrics Server installation until the Monitoring phase.
+
+### Lessons Learned
+- Requests influence scheduling.
+- Limits restrict maximum resource usage.
+- CPU is throttled when limits are exceeded.
+- Memory limits can trigger OOMKills.
+- Requests and limits determine QoS.
+- Most web applications operate in the Burstable QoS class.
+

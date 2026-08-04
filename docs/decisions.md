@@ -19,3 +19,21 @@ A future backend API should expose dedicated endpoints such as:
 - `/health`
 
 These endpoints should evaluate application dependencies appropriately rather than relying only on the root application path.
+
+--- 
+
+## ADR-002: Resource Request Strategy
+
+SecureCart uses Burstable Quality of Service by configuring requests lower than limits.
+
+This approach reserves sufficient CPU and memory for scheduling while allowing temporary resource bursts during increased workload.
+
+Current frontend allocation:
+
+- CPU Request: 100m
+- CPU Limit: 250m
+- Memory Request: 128Mi
+- Memory Limit: 256Mi
+
+These values are intentionally conservative for the lightweight frontend and will be revisited after Metrics Server and application monitoring are introduced.
+

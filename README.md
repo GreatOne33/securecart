@@ -39,7 +39,10 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - Dynamic HTML generation
 - Init Containers
 - Downward API
-- Startup, readiness, and liveness probes
+- Startup, Readiness, and Liveness Probes
+- CPU and Memory Requests
+- CPU and Memory Limits
+- Burstable QoS
 - Application-aware Service traffic management
 - Production-style documentation
 
@@ -88,6 +91,14 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] Liveness Probes
 - [x] Service endpoint health management
 - [x] Container restart validation
+
+### Resource Management
+
+- [x] CPU Requests
+- [x] Memory Requests
+- [x] CPU Limits
+- [x] Memory Limits
+- [x] Burstable QoS
 
 ### Next
 
@@ -289,7 +300,6 @@ Upcoming work:
 - Expose SecureCart through an Ingress Controller
 - Configure host-based routing
 - Enable HTTPS/TLS
-- Configure Resource Requests & Limits
 - Configure NetworkPolicies
 
 **Long-term goal:** Deploy SecureCart to Amazon EKS using Terraform, Helm, and GitHub Actions.
