@@ -563,18 +563,21 @@ resources:
 
 Verified:
 
-Deployment rolled out successfully
-New ReplicaSet created
-Resources stored in Deployment
-Requests and limits applied to Pods
-QoS changed from BestEffort to Burstable
+- Deployment rolled out successfully
+- New ReplicaSet created
+- Resources stored in Deployment
+- Requests and limits applied to Pods
+- QoS changed from BestEffort to Burstable
 
 ### Validation commands included:
 
+```
 kubectl describe pod <pod-name>
 
 kubectl get deployment securecart-frontend \
   -o jsonpath='{.spec.template.spec.containers[0].resources}'
+
+```
 
 ### Observations
 
@@ -582,11 +585,11 @@ kubectl get deployment securecart-frontend \
 
 Before this change:
 
-QoS Class: BestEffort
+  QoS Class: BestEffort
 
 After configuring requests and limits:
 
-QoS Class: Burstable
+  QoS Class: Burstable
 
 The scheduler now reserves:
 
@@ -610,6 +613,7 @@ kubectl top pods
 ```
 
 ### Result:
+  
   Metrics API not available
 
 The local Kind cluster does not include Metrics Server by default.
