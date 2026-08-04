@@ -1,3 +1,22 @@
+# Local development files
+.local/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+
+# Environment files
+.env
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+
+# Logs
+*.log
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

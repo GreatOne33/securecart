@@ -41,8 +41,8 @@
 
 - [x] Configure Startup, Readiness, and Liveness Probes
 - [X] Configure Resource Requests & Limits
-- [ ] Configure Ingress
-- [ ] Enable HTTPS/TLS
+- [X] Configure Ingress
+- [X] Enable HTTPS/TLS
 - [ ] Configure NetworkPolicies
 
 ---

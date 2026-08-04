@@ -638,3 +638,80 @@ Runtime utilization will be explored during the Monitoring and Autoscaling miles
 - Requests and limits determine QoS.
 - Most web applications operate in the Burstable QoS class.
 
+## Session 10 — Kubernetes Ingress & TLS
+
+Objective
+
+- Expose SecureCart through an NGINX Ingress Controller and secure external traffic using HTTPS.
+
+### Implemented
+- Installed the NGINX Ingress Controller
+- Configured host-based routing
+- Created a Kubernetes Ingress resource
+- Added Kind host port mappings for ports 80 and 443
+- Generated a self-signed TLS certificate
+- Created a Kubernetes TLS Secret
+- Configured TLS termination at the Ingress Controller
+- Enabled automatic HTTP to HTTPS redirection
+- Imported the certificate into the Ubuntu trust store
+
+### Validation
+
+Verified:
+
+- HTTPS returns HTTP/2 200 OK
+- HTTP redirects with 308 Permanent Redirect
+- TLS certificate contains the securecart.local Subject Alternative Name
+- TLS Secret is successfully loaded by the Ingress Controller
+- SecureCart is accessible through both curl and a web browser
+
+### Commands used:
+```
+curl -I https://securecart.local
+
+curl -I http://securecart.local
+
+openssl s_client \
+  -connect securecart.local:443 \
+  -servername securecart.local
+
+```
+
+### Challenges
+
+Initial connection failures
+
+After recreating the Kind cluster, requests to securecart.local returned:
+
+  Recv failure: Connection reset by peer 
+
+Root cause:
+
+The Ingress Controller scheduled onto the worker node while the Kind host port mappings forwarded traffic into the control-plane node.
+
+Resolution:
+
+- Labeled the control-plane node
+- Applied a node selector to the Ingress Controller
+- Redeployed the controller onto the control-plane node
+
+Result:
+
+- Ingress traffic successfully reached the SecureCart Service.
+
+### Local certificate trust
+
+The application successfully served HTTPS, but browsers continued displaying Not Secure because SecureCart uses a self-signed certificate for local development.
+
+The certificate was added to the Ubuntu trust store and validated using curl and openssl.
+
+In production, certificates would be issued by a trusted Certificate Authority using cert-manager and Let's Encrypt (or an enterprise PKI).
+
+### Lessons Learned
+- An Ingress resource only defines routing rules; an Ingress Controller performs the routing.
+- Host-based routing depends on the HTTP Host header.
+- TLS termination occurs at the Ingress Controller.
+- Backend Services can continue using HTTP while client traffic remains encrypted.
+- Kind host port mappings must align with the node running the Ingress Controller.
+- Self-signed certificates are suitable for local development but are not a replacement for production certificates.
+
