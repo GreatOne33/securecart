@@ -125,9 +125,11 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] Block unauthorized Pod access
 - [x] Validate allowed and denied traffic paths
 
-### Next
+#### Next
 
-- [ ] NetworkPolicies
+- [ ] Containerize custom frontend
+- [ ] Build backend API
+- [ ] Containerize backend
 
 ---
 
@@ -153,6 +155,7 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
                ┌──────────────────┼──────────────────┐
                ▼                  ▼                  ▼
         Frontend Pod       Frontend Pod       Frontend Pod
+        
 
 ```
 
@@ -402,6 +405,7 @@ securecart/
 ├── .gitignore
 ├── LICENSE
 └── README.md
+
 ```
 
 ---
@@ -420,14 +424,14 @@ Project documentation is maintained throughout development.
 
 ## 🚀 Current Focus
 
-**Current milestone:** Kubernetes NetworkPolicies
+**Current milestone:** Containerize the SecureCart frontend
 
 Upcoming work:
 
-- Establish default-deny network isolation
-- Permit only required Ingress-to-frontend traffic
-- Validate blocked and allowed communication paths
-- Document least-privilege network controls
+- Create a SecureCart-owned frontend image
+- Replace the stock NGINX runtime-rendering approach
+- Build and test the image locally
+- Deploy the custom image to Kubernetes
 
 **Long-term goal:** Deploy SecureCart to Amazon EKS using Terraform, Helm, and GitHub Actions.
 

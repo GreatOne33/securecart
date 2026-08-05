@@ -48,3 +48,16 @@ Kind maps host ports 80 and 443 into the control-plane node. The Ingress Control
 TLS terminates at the Ingress Controller. The controller forwards HTTP traffic internally to the ClusterIP Service.
 
 A self-signed certificate is used for local development. Production deployments will use a trusted certificate authority through AWS Certificate Manager or cert-manager.
+
+---
+
+## ADR-004: Frontend NetworkPolicy Strategy
+
+SecureCart isolates frontend Pods using a namespace-scoped ingress NetworkPolicy.
+
+The policy permits TCP port 80 only from Pods in the dedicated `ingress-nginx` namespace. Traffic from other namespaces is denied.
+
+A separate default-deny policy is not used because the allow policy itself selects and isolates the frontend Pods.
+
+This design provides a clear least-privilege boundary while remaining maintainable for the current local architecture. When additional application components are introduced, more specific Pod-to-Pod rules will be added.
+

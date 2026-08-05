@@ -713,3 +713,112 @@ In production, certificates would be issued by a trusted Certificate Authority u
 - Kind host port mappings must align with the node running the Ingress Controller.
 - Self-signed certificates are suitable for local development but are not a replacement for production certificates.
 
+## Session 11 - Kubernetes NetworkPolicies
+
+**Milestone:** Network Segmentation and Least-Privilege Access  
+**Status:** Completed
+
+### Objective
+
+Restrict inbound access to the SecureCart frontend so that traffic is accepted only through the NGINX Ingress Controller.
+
+### Baseline Validation
+
+Before applying a NetworkPolicy:
+
+- A temporary BusyBox Pod could reach `securecart-service`.
+- HTTPS through `securecart.local` returned `HTTP/2 200`.
+
+This confirmed that Kubernetes networking allowed traffic by default.
+
+### Initial Isolation Test
+
+Created a policy selecting the frontend Pods with no ingress allow rules.
+
+Observed:
+
+- BusyBox traffic timed out.
+- HTTPS through the Ingress Controller timed out.
+- All frontend Pods remained Running and Ready.
+
+This demonstrated that application health and network reachability are separate concerns.
+
+### Troubleshooting
+
+The initial allow policies did not restore connectivity, even after validating:
+
+- Frontend Pod labels
+- Ingress Controller Pod labels
+- Namespace labels
+- The stored NetworkPolicy YAML
+- Direct frontend Pod-IP access
+- Service access from the Ingress Controller
+- Namespace-only and port-only allow rules
+
+Restarted the Kind networking DaemonSet:
+
+```bash
+kubectl rollout restart daemonset/kindnet -n kube-system
+
+kubectl rollout status daemonset/kindnet \
+  -n kube-system \
+  --timeout=180s
+  
+```
+
+After the restart, policy changes were enforced correctly.
+
+### Final Policy
+
+Configured a single NetworkPolicy that:
+
+- Selects the SecureCart frontend Pods
+- Isolates them for ingress traffic
+- Permits TCP port 80 only from the `ingress-nginx` namespace
+
+A separate default-deny policy was not required because selecting the frontend Pods with an ingress policy already isolates them.
+
+### Final Validation
+
+Allowed path:
+
+```bash
+curl --max-time 5 -I https://securecart.local
+
+```
+
+Result:
+
+```text
+HTTP/2 200
+
+```
+
+Blocked path:
+
+```bash
+kubectl run network-test \
+  --image=busybox:1.36 \
+  --restart=Never \
+  --rm -i \
+  -- wget -T 5 -qO- http://securecart-service
+
+```
+
+Result:
+
+```text
+wget: download timed out
+
+```
+
+### Lessons Learned
+
+- Kubernetes networking permits Pod-to-Pod communication by default.
+- A NetworkPolicy selects and isolates Pods; a separate deny policy is not always needed.
+- NetworkPolicies are based on Pod and namespace identity rather than fixed Pod IP addresses.
+- Application health does not guarantee network reachability.
+- CNI behavior must be considered when troubleshooting policy enforcement.
+- Restarting kindnet reconciled stale policy behavior in the local Kind environment.
+- Least-privilege access was achieved by permitting only the dedicated Ingress namespace.
+
