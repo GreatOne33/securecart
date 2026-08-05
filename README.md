@@ -213,134 +213,136 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 
 ### Prerequisites
 
+Ensure the following tools are installed:
+
 - Docker
-- kubectl
 - Kind
+- kubectl
+- Git
+- OpenSSL
+- curl
 
-### Create the cluster
-
-```bash
-kind create cluster --name securecart --config kind/cluster.yaml
-```
-
-### Validate the cluster
-```bash
-kubectl cluster-info --context kind-securecart
-```
-
-### Deploy SecureCart
+Verify installation:
 
 ```bash
-kubectl apply -f kubernetes/base/configmap.yaml
-kubectl apply -f kubernetes/base/secrets/secret-example.yaml
-kubectl apply -f kubernetes/base/frontend-content.yaml
-kubectl apply -f kubernetes/base/frontend-deployment.yaml
-kubectl apply -f kubernetes/base/frontend-service.yaml
+docker --version
+kind --version
+kubectl version --client
+git --version
+openssl version
+curl --version
 ```
 
-### Verify the deployment
+---
+
+## Clone the Repository
 
 ```bash
-kubectl rollout status deployment/securecart-frontend
-kubectl get pods
-kubectl get services
-kubectl get configmaps
-kubectl get secrets
+git clone https://github.com/GreatOne33/securecart.git
 
+cd securecart
 ```
 
-## Health Probes
+---
 
-SecureCart uses three Kubernetes health probes to improve application reliability.
-
-| Probe | Purpose |
-|--------|---------|
-| Startup | Prevents readiness and liveness checks until the application has started successfully. |
-| Readiness | Determines when a Pod is ready to receive Service traffic. |
-| Liveness | Restarts the container if the application becomes unhealthy. |
-
-### Verify health probes
+## Create the Kind Cluster
 
 ```bash
-kubectl describe pod <pod-name> | grep -E "Startup|Readiness|Liveness"
+kind create cluster \
+  --config kubernetes/kind/kind-cluster.yaml
 ```
+
+Verify the cluster:
 
 ```bash
-kubectl get endpointslice \
-  -l kubernetes.io/service-name=securecart-service \
-  -o wide
-  
+kubectl cluster-info
+
+kubectl get nodes
 ```
 
-### Test the application internally
+Expected:
+
+```
+NAME                 STATUS   ROLES           AGE
+securecart-control-plane   Ready   control-plane
+securecart-worker          Ready   <none>
+```
+
+---
+
+## Deploy the Frontend
 
 ```bash
-kubectl run service-test \
-  --image=busybox:1.36 \
-  --restart=Never \
-  --rm -i \
-  -- wget -qO- http://securecart-service
-
-```
-
-### Install the Ingress Controller
-```bash
-
-kubectl apply -f \
-  https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
-
-kubectl wait \
-  --namespace ingress-nginx \
-  --for=condition=Ready \
-  pod \
-  --selector=app.kubernetes.io/component=controller \
-  --timeout=180s
-
-```
-### Pin the Controller to the Mapped Node
-``` bash
-kubectl label node securecart-control-plane \
-  ingress-ready=true \
-  --overwrite
-
-kubectl patch deployment ingress-nginx-controller \
-  -n ingress-nginx \
-  --type=merge \
-  -p '{
-    "spec": {
-      "template": {
-        "spec": {
-          "nodeSelector": {
-            "kubernetes.io/os": "linux",
-            "ingress-ready": "true"
-          }
-        }
-      }
-    }
-  }'
-
-```
-
-### Deploy Ingress Rule 
-``` bash
-
 kubectl apply \
-  -f kubernetes/base/network-policies/allow-ingress-to-frontend.yaml
-### Verify the Ingress Controller
-
+  -f kubernetes/base/frontend-deployment.yaml
 ```
 
-``` bash
+Verify:
+
+```bash
+kubectl get deployments
+
+kubectl get pods
+```
+
+Wait until the pod shows:
+
+```
+READY   STATUS
+1/1     Running
+```
+
+---
+
+## Deploy the Service
+
+```bash
+kubectl apply \
+  -f kubernetes/base/frontend-service.yaml
+```
+
+Verify:
+
+```bash
+kubectl get svc
+```
+
+---
+
+## Install the NGINX Ingress Controller
+
+```bash
+kubectl apply \
+  -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+```
+
+Wait for the controller:
+
+```bash
 kubectl rollout status deployment/ingress-nginx-controller \
   -n ingress-nginx
-
-kubectl get pods -n ingress-nginx -o wide
-
 ```
-### Generate Local TLS Material
-``` bash
-mkdir -p .local/tls
 
+Verify:
+
+```bash
+kubectl get pods \
+  -n ingress-nginx
+```
+
+---
+
+## Generate Local TLS Certificates
+
+Create a directory:
+
+```bash
+mkdir -p .local/tls
+```
+
+Generate the certificate:
+
+```bash
 openssl req \
   -x509 \
   -nodes \
@@ -351,71 +353,157 @@ openssl req \
   -out .local/tls/securecart.local.crt \
   -subj "/CN=securecart.local/O=SecureCart" \
   -addext "subjectAltName=DNS:securecart.local"
-
-  ```
-  ### Create the TLS Secret
-
-  ``` bash
-  kubectl create secret tls securecart-tls \
-  --cert=.local/tls/securecart.local.crt \
-  --key=.local/tls/securecart.local.key
-
-  ```
-  Apply the Ingress
-
-  ``` bash
-
-  kubectl apply -f kubernetes/base/frontend-ingress.yaml
-
-  ```
-
-  Verified Site is complying with Ingress Rule 
-
-``` bash 
-curl --max-time 5 -I https://securecart.local
-
 ```
 
-``` bash
+---
+
+## Create the Kubernetes TLS Secret
+
+```bash
+kubectl create secret tls securecart-tls \
+  --cert=.local/tls/securecart.local.crt \
+  --key=.local/tls/securecart.local.key
+```
+
+Verify:
+
+```bash
+kubectl get secret securecart-tls
+```
+
+---
+
+## Deploy the Ingress
+
+```bash
+kubectl apply \
+  -f kubernetes/base/frontend-ingress.yaml
+```
+
+Verify:
+
+```bash
+kubectl get ingress
+```
+
+---
+
+## Configure Local DNS
+
+Add the following entry to your hosts file.
+
+Linux/macOS:
+
+```
+/etc/hosts
+```
+
+Windows:
+
+```
+C:\Windows\System32\drivers\etc\hosts
+```
+
+Add:
+
+```
+127.0.0.1 securecart.local
+```
+
+---
+
+## Verify HTTPS Access
+
+```bash
+curl --max-time 5 -I https://securecart.local
+```
+
+Expected:
+
+```
+HTTP/2 200
+```
+
+You may also browse to:
+
+```
+https://securecart.local
+```
+
+Your browser will warn about the self-signed certificate. Accept the warning to continue.
+
+---
+
+## Apply the Frontend NetworkPolicy
+
+```bash
+kubectl apply \
+  -f kubernetes/base/network-policies/allow-ingress-to-frontend.yaml
+```
+
+Verify:
+
+```bash
+kubectl get networkpolicy
+```
+
+Expected:
+
+```
+NAME                         POD-SELECTOR
+allow-ingress-to-frontend    app=securecart,component=frontend
+```
+
+---
+
+## Validate Allowed Traffic
+
+Traffic through the Ingress Controller should still succeed.
+
+```bash
+curl --max-time 5 -I https://securecart.local
+```
+
+Expected:
+
+```
+HTTP/2 200
+```
+
+---
+
+## Validate Blocked Internal Traffic
+
+Launch a temporary BusyBox pod.
+
+```bash
 kubectl run network-test \
   --image=busybox:1.36 \
   --restart=Never \
-  --rm -i \
+  --rm -it \
   -- wget -T 5 -qO- http://securecart-service
-
 ```
 
+Expected:
 
-#### Configure Local Hostname
+```
+wget: download timed out
+```
+
+This demonstrates that:
+
+- External traffic entering through the NGINX Ingress Controller is permitted.
+- Direct pod-to-service traffic is denied by the NetworkPolicy.
+- The frontend is isolated according to the principle of least privilege.
+
+---
+
+## Clean Up
+
+Delete the cluster when finished.
 
 ```bash
-echo "127.0.0.1 securecart.local" | sudo tee -a /etc/hosts
-```
-
-### Trust Local TLS Certificate
-
-```bash
-sudo cp .local/tls/securecart.local.crt \
-  /usr/local/share/ca-certificates/
-
-sudo update-ca-certificates
-
-```
-
-### Access SecureCart
-
-- HTTP: `http://securecart.local`
-- HTTPS: `https://securecart.local`
-
-> The local self-signed certificate may still display a browser warning. TLS termination and certificate validation were confirmed with `curl` and `openssl`.
-
-### Delete the local cluster
-
-```bash
-kind delete cluster --name securecart
-
-```
-
+kind delete cluster
 ```
 ---
 

@@ -20,24 +20,6 @@ The NGINX Ingress Controller was scheduled onto the worker node while Kind host 
 
 Ingress traffic was successfully routed through the control-plane node and SecureCart became reachable on ports 80 and 443.
 
-## NetworkPolicy allow rule not taking effect
-
-### Symptoms
-
-- Default deny blocked traffic correctly
-- Valid allow rules still timed out
-- Direct Pod-IP and Service traffic both failed
-
-### Resolution
-
-Restarted the Kind networking DaemonSet:
-
-```bash
-kubectl rollout restart daemonset/kindnet -n kube-system
-kubectl rollout status daemonset/kindnet -n kube-system
-
-```
-
 ## NetworkPolicy allow rule did not restore connectivity
 
 ### Symptoms
