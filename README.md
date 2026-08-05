@@ -51,6 +51,9 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - HTTP → HTTPS Redirect
 - Locally generated TLS certificate
 - System trust-store validation with curl
+- Namespace-scoped NetworkPolicies
+- Least-privilege ingress controls
+- Internal traffic segmentation
 
 ---
 
@@ -114,6 +117,13 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] Host-based Routing
 - [x] HTTPS/TLS
 - [x] HTTP Redirects
+
+### Network Security
+
+- [x] Isolate frontend Pods
+- [x] Allow ingress-nginx namespace on TCP 80
+- [x] Block unauthorized Pod access
+- [x] Validate allowed and denied traffic paths
 
 ### Next
 

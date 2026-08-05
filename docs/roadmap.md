@@ -43,7 +43,7 @@
 - [X] Configure Resource Requests & Limits
 - [X] Configure Ingress
 - [X] Enable HTTPS/TLS
-- [ ] Configure NetworkPolicies
+- [X] Configure NetworkPolicies
 
 ---
 
