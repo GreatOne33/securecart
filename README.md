@@ -271,7 +271,8 @@ kubectl run service-test \
 ```
 
 ### Install the Ingress Controller
-```
+```bash
+
 kubectl apply -f \
   https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
 
@@ -284,7 +285,7 @@ kubectl wait \
 
 ```
 ### Pin the Controller to the Mapped Node
-```
+``` bash
 kubectl label node securecart-control-plane \
   ingress-ready=true \
   --overwrite
@@ -315,7 +316,7 @@ kubectl get pods -n ingress-nginx -o wide
 
 ```
 ### Generate Local TLS Material
-```
+``` bash
 mkdir -p .local/tls
 
 openssl req \
@@ -330,16 +331,17 @@ openssl req \
   -addext "subjectAltName=DNS:securecart.local"
 
   ```
-  Create the TLS Secret
+  ### Create the TLS Secret
 
-  ```
+  ``` bash
   kubectl create secret tls securecart-tls \
   --cert=.local/tls/securecart.local.crt \
   --key=.local/tls/securecart.local.key
 
   ```
   Apply the Ingress
-  ```
+
+  ``` bash
 
   kubectl apply -f kubernetes/base/frontend-ingress.yaml
 
@@ -373,6 +375,7 @@ sudo update-ca-certificates
 
 ```bash
 kind delete cluster --name securecart
+
 ```
 
 ```
