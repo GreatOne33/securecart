@@ -320,8 +320,17 @@ kubectl patch deployment ingress-nginx-controller \
   }'
 
 ```
+
+### Deploy Ingress Rule 
+``` bash
+
+kubectl apply \
+  -f kubernetes/base/network-policies/allow-ingress-to-frontend.yaml
 ### Verify the Ingress Controller
+
 ```
+
+``` bash
 kubectl rollout status deployment/ingress-nginx-controller \
   -n ingress-nginx
 
@@ -359,6 +368,22 @@ openssl req \
   kubectl apply -f kubernetes/base/frontend-ingress.yaml
 
   ```
+
+  Verified Site is complying with Ingress Rule 
+
+``` bash 
+curl --max-time 5 -I https://securecart.local
+
+```
+
+``` bash
+kubectl run network-test \
+  --image=busybox:1.36 \
+  --restart=Never \
+  --rm -i \
+  -- wget -T 5 -qO- http://securecart-service
+
+```
 
 
 #### Configure Local Hostname
