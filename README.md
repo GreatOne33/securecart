@@ -249,7 +249,7 @@ cd securecart
 ## Create the Kind Cluster
 
 ```bash
-kkind create cluster \
+kind create cluster \
   --name securecart \
   --config kind/cluster.yaml
 ```
@@ -328,9 +328,6 @@ kubectl label node securecart-control-plane \
   ingress-ready=true \
   --overwrite
 
-## Pin the Ingress Controller to the Mapped Node
-
-``` bash
 kubectl patch deployment ingress-nginx-controller \
   -n ingress-nginx \
   --type=merge \
@@ -346,6 +343,7 @@ kubectl patch deployment ingress-nginx-controller \
       }
     }
   }'
+
   ```
 
 Wait for the controller:
@@ -536,7 +534,8 @@ This demonstrates that:
 Delete the cluster when finished.
 
 ```bash
-kind delete cluster
+kind delete cluster --name securecart
+
 ```
 ---
 
