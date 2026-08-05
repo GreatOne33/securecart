@@ -8,7 +8,7 @@
 
 **Status:** In Progress
 
-**Current Phase:** Kubernetes Fundamentals
+**Current Phase:** Application Development
 
 SecureCart is an ongoing engineering project designed to simulate the work of a Cloud Infrastructure / Platform Engineer. The project follows production-style engineering practices including Infrastructure as Code, Git-based workflows, documentation, and Kubernetes deployments.
 
@@ -191,6 +191,7 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - EndpointSlices
 - Resource Requests and Limits
 - Health Probes
+- NetworkPolicies
 
 ### Infrastructure as Code
 
@@ -248,8 +249,9 @@ cd securecart
 ## Create the Kind Cluster
 
 ```bash
-kind create cluster \
-  --config kubernetes/kind/kind-cluster.yaml
+kkind create cluster \
+  --name securecart \
+  --config kind/cluster.yaml
 ```
 
 Verify the cluster:
@@ -270,11 +272,14 @@ securecart-worker          Ready   <none>
 
 ---
 
-## Deploy the Frontend
+## Deploy SecureCart
 
 ```bash
-kubectl apply \
-  -f kubernetes/base/frontend-deployment.yaml
+kubectl apply -f kubernetes/base/configmap.yaml
+kubectl apply -f kubernetes/base/secrets/secret-example.yaml
+kubectl apply -f kubernetes/base/frontend-content.yaml
+kubectl apply -f kubernetes/base/frontend-deployment.yaml
+kubectl apply -f kubernetes/base/frontend-service.yaml
 ```
 
 Verify:
@@ -315,6 +320,33 @@ kubectl get svc
 kubectl apply \
   -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
 ```
+````markdown
+## Pin the Ingress Controller to the Mapped Node
+
+```bash
+kubectl label node securecart-control-plane \
+  ingress-ready=true \
+  --overwrite
+
+## Pin the Ingress Controller to the Mapped Node
+
+``` bash
+kubectl patch deployment ingress-nginx-controller \
+  -n ingress-nginx \
+  --type=merge \
+  -p '{
+    "spec": {
+      "template": {
+        "spec": {
+          "nodeSelector": {
+            "kubernetes.io/os": "linux",
+            "ingress-ready": "true"
+          }
+        }
+      }
+    }
+  }'
+  ```
 
 Wait for the controller:
 
@@ -324,10 +356,11 @@ kubectl rollout status deployment/ingress-nginx-controller \
 ```
 
 Verify:
-
-```bash
-kubectl get pods \
+``` bash
+kubectl rollout status deployment/ingress-nginx-controller \
   -n ingress-nginx
+
+kubectl get pods -n ingress-nginx -o wide
 ```
 
 ---
