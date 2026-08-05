@@ -379,14 +379,6 @@ kind delete cluster --name securecart
 ```
 
 ```
-
-### Delete the local cluster
-
-```bash
-kind delete cluster --name securecart
-
-```
-
 ---
 
 ## 📁 Repository Structure
