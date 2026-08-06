@@ -20,40 +20,10 @@ spec:
         component: frontend
 
     spec:
-      initContainers:
-        - name: render-frontend
-          image: nginx:1.27-alpine
-
-          command:
-            - /bin/sh
-            - -c
-
-          args:
-            - |
-              envsubst '${APP_NAME} ${ENVIRONMENT} ${VERSION} ${COMPANY} ${POD_NAME}' \
-                < /templates/index.html.template \
-                > /generated/index.html
-
-          envFrom:
-            - configMapRef:
-                name: securecart-config
-
-          env:
-            - name: POD_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-
-          volumeMounts:
-            - name: frontend-template
-              mountPath: /templates
-
-            - name: generated-content
-              mountPath: /generated
-
       containers:
         - name: frontend
-          image: nginx:1.27-alpine
+          image: securecart-frontend:0.1.0
+          imagePullPolicy: Never
 
           ports:
             - containerPort: 80
@@ -86,11 +56,11 @@ spec:
             successThreshold: 1
             failureThreshold: 3
 
-          resources: 
-            requests: 
+          resources:
+            requests:
               cpu: "100m"
               memory: "128Mi"
-            limits: 
+            limits:
               cpu: "250m"
               memory: "256Mi"
 
@@ -119,14 +89,7 @@ spec:
                   name: securecart-config
                   key: COMPANY
 
-          volumeMounts:
-            - name: generated-content
-              mountPath: /usr/share/nginx/html
-
-      volumes:
-        - name: frontend-template
-          configMap:
-            name: securecart-frontend-content
-
-        - name: generated-content
-          emptyDir: {}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name

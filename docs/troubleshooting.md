@@ -59,4 +59,37 @@ After kindnet restarted, the namespace-scoped allow policy worked correctly:
 - HTTPS traffic through ingress-nginx succeeded.
 - Traffic from an unauthorized Pod in the default namespace remained blocked.
 
+## NetworkPolicy state became inconsistent after Deployment rollout
+
+### Symptoms
+
+After replacing the frontend Pods during a rolling update:
+
+- HTTPS through the Ingress Controller timed out.
+- A temporary Pod in the default namespace could reach `securecart-service`.
+- The live NetworkPolicy and Pod labels were still correct.
+
+### Root Cause
+
+The local Kind networking implementation did not reconcile NetworkPolicy state correctly for the newly created frontend Pod endpoints.
+
+### Resolution
+
+Restarted the kindnet DaemonSet:
+
+```bash
+kubectl rollout restart daemonset/kindnet -n kube-system
+
+kubectl rollout status daemonset/kindnet \
+  -n kube-system \
+  --timeout=180s
+```
+
+### Result
+
+After kindnet restarted:
+
+- HTTPS through ingress-nginx returned HTTP/2 200.
+- Unauthorized traffic from a Pod in the default namespace timed out.
+
 

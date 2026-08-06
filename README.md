@@ -54,6 +54,8 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - Namespace-scoped NetworkPolicies
 - Least-privilege ingress controls
 - Internal traffic segmentation
+- Add the Custom SecureCart frontend Image
+- Removed the init Container from the Current Architecture 
 
 ---
 
@@ -127,7 +129,7 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 
 #### Next
 
-- [ ] Containerize custom frontend
+- [X] Containerize custom frontend
 - [ ] Build backend API
 - [ ] Containerize backend
 

@@ -49,7 +49,7 @@
 
 ## Phase 2 - Application
 
-- [ ] Containerize custom frontend
+- [X] Containerize custom frontend
 - [ ] Build backend API
 - [ ] Containerize backend
 - [ ] Connect frontend to backend
