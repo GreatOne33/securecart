@@ -2,9 +2,13 @@
 
 This document records important architectural and engineering decisions made during SecureCart development.
 
+Architectural Decision Records (ADRs) capture significant engineering decisions, their rationale, and the long-term direction of the SecureCart platform.
+
 ---
 
 ## ADR-001: Health Probe Strategy
+
+**Introduced:** v0.3.0
 
 SecureCart uses HTTP-based startup, readiness, and liveness probes for the frontend NGINX container.
 
@@ -24,6 +28,8 @@ These endpoints should evaluate application dependencies appropriately rather th
 
 ## ADR-002: Resource Request Strategy
 
+**Introduced:** v0.3.0
+
 SecureCart uses Burstable Quality of Service by configuring requests lower than limits.
 
 This approach reserves sufficient CPU and memory for scheduling while allowing temporary resource bursts during increased workload.
@@ -41,6 +47,8 @@ These values are intentionally conservative for the lightweight frontend and wil
 
 ## ADR-003: Ingress and TLS Strategy
 
+**Introduced:** v0.4.0
+
 SecureCart uses the NGINX Ingress Controller for host-based HTTP and HTTPS routing.
 
 Kind maps host ports 80 and 443 into the control-plane node. The Ingress Controller is scheduled onto that same node so incoming traffic reaches its host ports.
@@ -53,6 +61,8 @@ A self-signed certificate is used for local development. Production deployments 
 
 ## ADR-004: Frontend NetworkPolicy Strategy
 
+**Introduced:** v0.6.0
+
 SecureCart isolates frontend Pods using a namespace-scoped ingress NetworkPolicy.
 
 The policy permits TCP port 80 only from Pods in the dedicated `ingress-nginx` namespace. Traffic from other namespaces is denied.
@@ -60,4 +70,35 @@ The policy permits TCP port 80 only from Pods in the dedicated `ingress-nginx` n
 A separate default-deny policy is not used because the allow policy itself selects and isolates the frontend Pods.
 
 This design provides a clear least-privilege boundary while remaining maintainable for the current local architecture. When additional application components are introduced, more specific Pod-to-Pod rules will be added.
+
+---
+
+## ADR-005: Frontend Containerization Strategy
+
+**Introduced:** v0.7.0
+
+SecureCart originally generated frontend content using a Kubernetes Init Container, ConfigMap template, and shared `emptyDir` volume.
+
+This design was intentionally selected during Phase 1 to demonstrate Kubernetes concepts including Init Containers, ConfigMaps, shared volumes, and runtime configuration rendering.
+
+As the project matured, the responsibility for rendering the frontend was moved into the application container itself.
+
+The SecureCart frontend image now includes:
+
+- HTML template
+- Startup entrypoint
+- Runtime configuration rendering using `envsubst`
+- NGINX web server
+
+Kubernetes now provides runtime configuration through ConfigMaps and the Downward API while the application image owns its startup process.
+
+This architectural change provides several advantages:
+
+- The frontend image can run locally with Docker or in Kubernetes without modification.
+- The Deployment manifest is significantly simpler.
+- Shared rendering volumes are no longer required.
+- Application startup logic remains with the application rather than the orchestration platform.
+- The container image becomes portable across container platforms including Docker, Kubernetes, Amazon ECS, and Amazon EKS.
+
+This approach aligns with the principle that applications should own their initialization whenever practical, while Kubernetes remains responsible for deployment, scheduling, and runtime configuration.
 
