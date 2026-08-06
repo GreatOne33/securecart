@@ -10,6 +10,35 @@
 
 **Current Phase:** Application Development
 
+### Phase 1 - Kubernetes Foundations ✅
+
+- Kubernetes Deployments
+- Services
+- ConfigMaps
+- Secrets
+- Init Containers
+- Health Probes
+- Resource Requests & Limits
+- Ingress with TLS
+- NetworkPolicies
+
+### Phase 2 - Application Development 🚧
+
+✅ Custom SecureCart frontend image
+
+The frontend is now packaged as a self-contained Docker image instead of relying on a Kubernetes Init Container to render application content.
+
+The container:
+
+- Generates the application page during startup
+- Reads configuration from Kubernetes environment variables
+- Uses the Downward API to display the current Pod
+- Starts NGINX automatically through a custom entrypoint
+
+**Next milestone:**
+
+- Containerize the backend API
+
 SecureCart is an ongoing engineering project designed to simulate the work of a Cloud Infrastructure / Platform Engineer. The project follows production-style engineering practices including Infrastructure as Code, Git-based workflows, documentation, and Kubernetes deployments.
 
 ---
@@ -29,33 +58,10 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 
 ## ✨ Current Features
 
-- Multi-replica Kubernetes Deployment
-- ClusterIP Service
-- Kubernetes DNS
-- Rolling Updates
-- Rollbacks
-- ConfigMap-driven configuration
-- Kubernetes Secrets
-- Dynamic HTML generation
-- Init Containers
-- Downward API
-- Startup, Readiness, and Liveness Probes
-- CPU and Memory Requests
-- CPU and Memory Limits
-- Burstable QoS
-- Application-aware Service traffic management
-- Production-style documentation
-- NGINX Ingress Controller
-- Host-based Routing
-- HTTPS/TLS
-- HTTP → HTTPS Redirect
-- Locally generated TLS certificate
-- System trust-store validation with curl
-- Namespace-scoped NetworkPolicies
-- Least-privilege ingress controls
-- Internal traffic segmentation
-- Add the Custom SecureCart frontend Image
-- Removed the init Container from the Current Architecture 
+- Custom SecureCart frontend Docker image
+- Self-contained application startup
+- Containerized frontend rendering
+- Kubernetes-independent application image
 
 ---
 
@@ -127,9 +133,17 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] Block unauthorized Pod access
 - [x] Validate allowed and denied traffic paths
 
+### Application Containerization
+
+- [x] Custom frontend Docker image
+- [x] Docker entrypoint rendering
+- [x] Local Docker validation
+- [x] Image loaded into Kind
+- [x] Deployment migrated to custom image
+- [x] Removed Init Container architecture
+
 #### Next
 
-- [X] Containerize custom frontend
 - [ ] Build backend API
 - [ ] Containerize backend
 
@@ -138,26 +152,24 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 ## 🏗️ Current Architecture
 
 ```text
-                         Kubernetes Cluster
-
-                               Browser
-                                  │
-                            HTTPS :443
-                                  │
-                                  ▼
-                     NGINX Ingress Controller
-                         TLS Termination
-                                  │
-                                  ▼
-                       securecart-ingress
-                                  │
-                                  ▼
-                  securecart-service (ClusterIP)
-                                  │
-               ┌──────────────────┼──────────────────┐
-               ▼                  ▼                  ▼
-        Frontend Pod       Frontend Pod       Frontend Pod
-        
+                   Kubernetes
+                        │
+        ┌───────────────┴────────────────┐
+        │                                │
+   ConfigMap                      Downward API
+        │                                │
+        └───────────────┬────────────────┘
+                        │
+                        ▼
+        SecureCart Frontend Container
+      ┌───────────────────────────────┐
+      │ HTML Template                 │
+      │ Startup Script (envsubst)     │
+      │ NGINX                         │
+      └───────────────────────────────┘
+                        │
+                        ▼
+                    HTTPS via Ingress
 
 ```
 
@@ -172,6 +184,7 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 ### Containers and Orchestration
 
 - Docker
+- Dockerfiles
 - Kubernetes
 - Kind
 - NGINX
@@ -279,9 +292,9 @@ securecart-worker          Ready   <none>
 ```bash
 kubectl apply -f kubernetes/base/configmap.yaml
 kubectl apply -f kubernetes/base/secrets/secret-example.yaml
-kubectl apply -f kubernetes/base/frontend-content.yaml
 kubectl apply -f kubernetes/base/frontend-deployment.yaml
 kubectl apply -f kubernetes/base/frontend-service.yaml
+
 ```
 
 Verify:
@@ -545,13 +558,14 @@ kind delete cluster --name securecart
 
 ```text
 securecart/
+├── app/
+│   └── frontend/
+│       ├── Dockerfile
+│       ├── docker-entrypoint.sh
+│       └── index.html.template
 ├── docs/
 ├── kind/
 ├── kubernetes/
-│   └── base/
-├── .gitignore
-├── LICENSE
-└── README.md
 
 ```
 
@@ -571,14 +585,15 @@ Project documentation is maintained throughout development.
 
 ## 🚀 Current Focus
 
-**Current milestone:** Containerize the SecureCart frontend
+**Current milestone:** Build the SecureCart backend API
 
 Upcoming work:
 
-- Create a SecureCart-owned frontend image
-- Replace the stock NGINX runtime-rendering approach
-- Build and test the image locally
-- Deploy the custom image to Kubernetes
+- Build the backend API
+- Containerize the backend
+- Deploy the backend to Kubernetes
+- Connect the frontend to the backend service
+- Secure frontend-to-backend communication
 
 **Long-term goal:** Deploy SecureCart to Amazon EKS using Terraform, Helm, and GitHub Actions.
 

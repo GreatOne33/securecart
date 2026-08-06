@@ -822,3 +822,150 @@ wget: download timed out
 - Restarting kindnet reconciled stale policy behavior in the local Kind environment.
 - Least-privilege access was achieved by permitting only the dedicated Ingress namespace.
 
+## Session 12 - Containerizing the SecureCart Frontend
+
+**Milestone:** Application Containerization
+
+**Status:** Completed
+
+### Objective
+
+Replace the Kubernetes Init Container rendering approach with a self-contained SecureCart frontend image capable of generating application content during container startup.
+
+### Background
+
+During Phase 1, SecureCart generated its frontend using:
+
+- ConfigMap
+- Init Container
+- emptyDir volume
+- NGINX container
+
+This demonstrated several important Kubernetes concepts, but it tightly coupled application rendering to Kubernetes.
+
+The objective of this session was to move application rendering into the frontend container itself, allowing the image to run both locally with Docker and inside Kubernetes.
+
+### Implementation
+
+Completed the following:
+
+- Created `app/frontend/`
+- Added a custom Dockerfile
+- Created a startup script using `envsubst`
+- Embedded the HTML template into the image
+- Configured the entrypoint to render the application during container startup
+- Built the first SecureCart-owned Docker image
+- Tested the image locally using Docker
+- Loaded the image into the Kind cluster
+- Updated the frontend Deployment to use the custom image
+
+### Validation
+
+Verified:
+
+- Docker container rendered the application correctly
+- Environment variables populated successfully
+- Downward API continued injecting the Pod name
+- HTTPS access through the Ingress Controller remained functional
+- Kubernetes successfully rolled out the new Deployment
+- The frontend continued serving traffic after the migration
+
+Validation commands included:
+
+```bash
+docker build -t securecart-frontend:0.1.0 app/frontend
+
+docker run \
+  -p 8081:80 \
+  --rm \
+  -e APP_NAME=SecureCart \
+  -e ENVIRONMENT=Development \
+  -e VERSION=2.0.0 \
+  -e COMPANY="GreatOne Labs" \
+  -e POD_NAME=docker-local \
+  securecart-frontend:0.1.0
+
+kind load docker-image securecart-frontend:0.1.0 \
+  --name securecart
+
+kubectl rollout status deployment/securecart-frontend
+
+curl -I https://securecart.local
+```
+
+### Architecture Evolution
+
+Previous architecture:
+
+```text
+ConfigMap
+      │
+      ▼
+Init Container
+      │
+      ▼
+emptyDir
+      │
+      ▼
+NGINX
+```
+
+New architecture:
+
+```text
+ConfigMap
+      │
+      ▼
+Docker EntryPoint
+      │
+      ▼
+Rendered HTML
+      │
+      ▼
+NGINX
+```
+
+Application rendering is now performed inside the container instead of by Kubernetes.
+
+### Challenges
+
+#### NetworkPolicy behavior after rollout
+
+Following the Deployment rollout, internal Pod-to-Service traffic was unexpectedly allowed despite the existing NetworkPolicy.
+
+Observed behavior:
+
+- HTTPS access through the Ingress Controller continued working.
+- Temporary BusyBox Pods could again reach `securecart-service`.
+
+Investigation confirmed that:
+
+- NetworkPolicy configuration was unchanged.
+- Frontend Pod labels were correct.
+- Ingress namespace labels remained correct.
+
+The issue was resolved by restarting the Kind networking DaemonSet (`kindnet`), after which NetworkPolicy enforcement returned to the expected least-privilege behavior.
+
+### Engineering Decisions
+
+- Shifted application rendering into the container image.
+- Reduced Kubernetes-specific startup logic.
+- Preserved ConfigMap-driven configuration.
+- Continued using the Downward API for runtime metadata.
+- Maintained immutable container images while injecting runtime configuration.
+
+### Lessons Learned
+
+- Containers should own application startup whenever practical.
+- Kubernetes should orchestrate workloads rather than generate application content.
+- Docker images become significantly more portable when startup logic resides inside the container.
+- The same image can now run locally and in Kubernetes without modification.
+- Runtime configuration can still be injected cleanly using ConfigMaps and the Downward API.
+- Kind networking may occasionally require reconciliation after Deployment changes when NetworkPolicies are in use.
+
+### Key Takeaways
+
+This session marked the transition from learning Kubernetes primitives to building production-style containerized applications.
+
+SecureCart no longer depends on Kubernetes Init Containers to generate application content. Instead, Kubernetes is responsible for scheduling and configuration while the application image owns its startup process.
+
