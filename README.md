@@ -1307,11 +1307,13 @@ securecart/
 
 Project documentation is maintained throughout development.
 
+```text
 - [Engineering Journal](docs/engineering-journal.md)
 - [Architecture](docs/architecture.md)
 - [Design Decisions](docs/decisions.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Roadmap](docs/roadmap.md)
+```
 
 ---
 
