@@ -381,3 +381,271 @@ This validated:
 - Traffic distribution across backend Pods
 
 ---
+
+## Frontend entered CrashLoopBackOff because the backend Service could not be resolved
+
+### Symptoms
+
+All SecureCart frontend Pods entered:
+
+```text
+CrashLoopBackOff
+```
+
+The previous container logs showed:
+```text
+host not found in upstream "securecart-backend-service"
+```
+
+NGINX exited with status code 1.
+
+### Investigation
+
+Verified:
+
+- BACKEND_HOST was correctly set to securecart-backend-service
+- BACKEND_PORT was correctly set to 8000
+- The backend Service existed
+- The backend Pods were Running and Ready
+- Kubernetes DNS eventually resolved:
+
+```teext
+securecart-backend-service.default.svc.cluster.local
+```
+
+to the expected ClusterIP
+
+However, frontend-labeled workloads were unable to reach the backend Service even though the NetworkPolicy configuration and workload labels were correct.
+
+### Root Cause
+
+The local Kind networking state had not correctly reconciled the allowed frontend-to-backend network path.
+
+Because frontend NGINX resolves the configured backend upstream when NGINX starts, the unavailable Service path caused NGINX startup to fail.
+
+Kubernetes repeatedly restarted the frontend containers, resulting in CrashLoopBackOff.
+
+### Resolution
+
+Restarted the Kind networking DaemonSet:
+
+```text
+kubectl rollout restart daemonset/kindnet -n kube-system
+
+kubectl rollout status daemonset/kindnet \
+  -n kube-system \
+  --timeout=180s
+```
+
+Then validated the authorized frontend path:
+
+```text
+kubectl run frontend-connectivity-test \
+  --image=busybox:1.36 \
+  --restart=Never \
+  --labels="app=securecart,component=frontend" \
+  --rm -i \
+  -- wget -T 5 -qO- \
+  http://securecart-backend-service:8000/api/status
+```
+
+After the network path recovered, restarted the frontend Deployment:
+```text
+kubectl rollout restart deployment/securecart-frontend
+
+kubectl rollout status deployment/securecart-frontend
+
+```
+
+### Result
+
+All three frontend Pods returned to:
+```text
+1/1 Running
+```
+
+and the full application path succeeded again:
+```text
+curl -i https://securecart.local/api/products
+```
+
+Result:
+```text
+HTTP/2 200
+```
+
+### Lesson
+
+An application container can fail during startup even when its own configuration is correct if it depends on an upstream service that must resolve or become reachable during initialization.
+
+When NGINX reports an unresolved upstream, validate both Kubernetes DNS and the permitted NetworkPolicy path before modifying the application configuration.
+
+### FastAPI PostgreSQL connectivity stalled after backend rollout
+Symptoms
+
+After updating the backend to include PostgreSQL connectivity, a request to:
+```text
+https://securecart.local/api/db-status
+```
+
+did not return and had to be interrupted.
+
+The backend Deployment itself rolled out successfully.
+
+### Investigation
+
+The PostgreSQL StatefulSet was healthy and:
+```bash
+kubectl exec securecart-postgres-0 -- \
+  pg_isready \
+  -U securecart_app \
+  -d securecart
+```
+
+returned:
+```text
+/var/run/postgresql:5432 - accepting connections
+```
+
+The database Service and application configuration were present, but the newly deployed backend could not successfully complete the database connection path.
+
+### Resolution
+
+Restarted the Kind networking DaemonSet:
+```bash
+kubectl rollout restart daemonset/kindnet -n kube-system
+
+kubectl rollout status daemonset/kindnet \
+  -n kube-system \
+  --timeout=180s
+```
+
+Then retested:
+```bash
+curl -i https://securecart.local/api/db-status
+```
+
+Result
+
+The endpoint returned:
+```text
+HTTP/2 200
+```
+
+with:
+```text
+{
+  "database": "PostgreSQL",
+  "status": "connected",
+  "test_query": 1
+}
+```
+
+This confirmed successful communication between FastAPI and PostgreSQL.
+
+### Lesson
+
+A successful workload rollout does not guarantee that all application dependency paths are reachable.
+
+Validate service-to-service connectivity independently when a new internal dependency is introduced.
+
+This behavior was observed in the local Kind environment and is treated as a local networking reconciliation issue rather than an expected Kubernetes deployment requirement.
+
+### PostgreSQL NetworkPolicy validation
+
+#### Objective
+
+Validate that PostgreSQL accepts connections only from SecureCart backend workloads.
+
+The database NetworkPolicy permits TCP port 5432 only from Pods carrying:
+```text
+app=securecart
+component=backend
+```
+
+### Unauthorized Pod Test
+
+An unlabeled PostgreSQL client Pod was launched:
+```bash
+kubectl run postgres-test \
+  --image=postgres:17-alpine \
+  --restart=Never \
+  --rm -i \
+  -- pg_isready \
+  -h securecart-postgres \
+  -p 5432 \
+  -t 5
+```
+
+Result:
+```text
+securecart-postgres:5432 - no response
+```
+
+### Frontend Identity Test
+
+A PostgreSQL client carrying the frontend workload identity was launched:
+```bash
+kubectl run frontend-postgres-test \
+  --image=postgres:17-alpine \
+  --restart=Never \
+  --labels="app=securecart,component=frontend" \
+  --rm -i \
+  -- pg_isready \
+  -h securecart-postgres \
+  -p 5432 \
+  -t 5
+```
+
+Result:
+```text
+securecart-postgres:5432 - no response
+```
+
+### Backend Identity Test
+
+A PostgreSQL client carrying the backend workload identity was launched:
+```bash
+kubectl run backend-postgres-test \
+  --image=postgres:17-alpine \
+  --restart=Never \
+  --labels="app=securecart,component=backend" \
+  --rm -i \
+  -- pg_isready \
+  -h securecart-postgres \
+  -p 5432 \
+  -t 5
+```
+
+Result:
+```text
+securecart-postgres:5432 - accepting connections
+```
+
+### Result
+
+The database trust boundary behaved as designed:
+```text
+Backend workload  -> PostgreSQL :5432   ALLOWED
+Frontend workload -> PostgreSQL :5432   DENIED
+Other workload    -> PostgreSQL :5432   DENIED
+```
+
+The normal application path continued to work:
+```bash
+curl --max-time 10 -i \
+  https://securecart.local/api/products
+```
+
+Result:
+```text
+HTTP/2 200
+```
+
+Lesson
+
+Network placement alone does not provide least privilege.
+
+The database is internal to the Kubernetes cluster, but explicit NetworkPolicy rules are still required to prevent unauthorized workloads from reaching PostgreSQL.
+
+---

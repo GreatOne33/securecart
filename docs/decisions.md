@@ -286,7 +286,7 @@ The current /health endpoint verifies that the FastAPI application is running an
 
 When PostgreSQL is introduced, the health strategy will be revisited so readiness can reflect whether the application is capable of serving requests that depend on required backend services.
 
-The API currently uses in-memory product data while the application architecture is developed.
+The backend originally used in-memory product data during initial API development.
 
 This is intentionally temporary.
 
@@ -307,3 +307,145 @@ PostgreSQL
 Database integration will replace the current in-memory product data while preserving the external API contract where practical.
 
 ---
+
+## ADR-009: PostgreSQL StatefulSet and Persistent Storage Strategy
+
+**Introduced:** v0.9.0
+
+SecureCart uses PostgreSQL as the persistent data layer for the backend application.
+
+PostgreSQL is deployed using a Kubernetes StatefulSet rather than a standard Deployment.
+
+A StatefulSet was selected because the database requires stable workload identity and persistent storage that survives Pod recreation.
+
+The PostgreSQL workload currently runs as a single replica:
+
+```text
+securecart-postgres-0
+```
+
+A single replica is used intentionally. Increasing the StatefulSet replica count without configuring PostgreSQL replication would not provide safe database high availability.
+
+The StatefulSet uses a volumeClaimTemplate to request persistent storage.
+
+The resulting storage relationship is:
+```text
+StatefulSet
+    |
+    v
+securecart-postgres-0
+    |
+    v
+PersistentVolumeClaim
+    |
+    v
+PersistentVolume
+
+```
+
+The local Kind environment uses the default standard StorageClass backed by the local-path provisioner.
+
+The PostgreSQL PVC currently requests:
+```text
+1 GiB
+ReadWriteOnce
+
+```
+Persistent storage is kept separate from the Pod lifecycle.
+
+This behavior was validated by:
+
+- Creating data in PostgreSQL
+- Deleting securecart-postgres-0
+- Allowing the StatefulSet to recreate the Pod
+- Verifying that the same PVC remained bound
+- Confirming that the database data remained available
+
+The database is exposed internally through the headless Kubernetes Service:
+```text
+securecart-postgres
+```
+
+The backend connects to PostgreSQL using Kubernetes DNS rather than Pod IP addresses.
+
+PostgreSQL credentials and database configuration are supplied through a Kubernetes Secret.
+
+This design allows database Pods to be recreated without losing application data and establishes a foundation for future migration to a production-grade managed or replicated PostgreSQL architecture.
+
+Future AWS deployment may replace the local PostgreSQL StatefulSet with a managed database service such as Amazon RDS while preserving the backend's database abstraction and external API contract.
+
+---
+
+## ADR-010: Database Access and Network Segmentation Strategy
+
+**Introduced:** v0.9.0
+
+SecureCart applies least-privilege network access to the PostgreSQL data tier.
+
+The PostgreSQL workload is identified using:
+
+```text
+app=securecart
+component=database
+```
+
+A Kubernetes NetworkPolicy selects the database Pods and permits inbound TCP traffic on port 5432 only from workloads carrying the backend identity:
+```text
+app=securecart
+component=backend
+```
+
+The intended access model is:
+```text
+Backend Pods  -> PostgreSQL :5432   Allowed
+Frontend Pods -> PostgreSQL :5432   Denied
+Other Pods    -> PostgreSQL :5432   Denied
+```
+
+This design prevents application tiers from receiving database access solely because they are running inside the same Kubernetes cluster.
+
+The frontend does not connect directly to PostgreSQL.
+
+Instead, the application request path remains:
+
+```text
+Client
+  |
+  v
+Ingress
+  |
+  v
+Frontend
+  |
+  v
+Backend
+  |
+  v
+PostgreSQL
+
+```
+
+The backend is the only application tier authorized to communicate directly with the database.
+
+Database credentials are stored in a Kubernetes Secret and supplied only to workloads that require them.
+
+Network authorization and database authentication therefore provide separate security controls:
+
+```text
+NetworkPolicy
+    determines whether the connection is permitted
+
+PostgreSQL authentication
+    determines whether the client is authorized by the database
+```
+
+The NetworkPolicy was validated using three workload identities:
+```text
+Unlabeled workload -> PostgreSQL   Denied
+Frontend workload  -> PostgreSQL   Denied
+Backend workload   -> PostgreSQL   Allowed
+```
+
+This design follows the principle of least privilege and limits lateral movement between application tiers.
+
+Future database services, workers, or administrative workloads will receive explicit access rules rather than broad access to the PostgreSQL tier.

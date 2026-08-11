@@ -517,3 +517,498 @@ Planned technologies include:
 The current architecture intentionally establishes application boundaries that can later be mapped to cloud infrastructure without redesigning the entire application.
 
 The implementation of these components will be documented as later project phases are completed.
+
+---
+
+## Persistent Data Architecture
+
+**Introduced:** v0.9.0
+
+SecureCart now includes PostgreSQL as the persistent data layer for the application.
+
+The application architecture consists of three primary application tiers:
+
+```text
+Frontend
+    |
+    v
+Backend
+    |
+    v
+PostgreSQL
+```
+
+Each tier has a separate responsibility and communicates through Kubernetes Services rather than directly addressing individual Pods.
+
+---
+
+## Current End-to-End Architecture
+
+```text
+                         External Client
+                                |
+                              HTTPS
+                                |
+                                v
+                    NGINX Ingress Controller
+                         TLS Termination
+                                |
+                                | HTTP :80
+                                v
+                     securecart-service
+                       ClusterIP Service
+                                |
+                                v
+                 +-----------------------------+
+                 | SecureCart Frontend Pods    |
+                 |                             |
+                 | NGINX                       |
+                 | Runtime HTML Rendering      |
+                 | /api/* Reverse Proxy        |
+                 +-----------------------------+
+                                |
+                                | TCP :8000
+                                | NetworkPolicy
+                                v
+                securecart-backend-service
+                       ClusterIP Service
+                                |
+                    +-----------+-----------+
+                    |                       |
+                    v                       v
+          +-------------------+   +-------------------+
+          | FastAPI Backend   |   | FastAPI Backend   |
+          | Pod               |   | Pod               |
+          +-------------------+   +-------------------+
+                    |                       |
+                    +-----------+-----------+
+                                |
+                                | PostgreSQL
+                                | TCP :5432
+                                | NetworkPolicy
+                                v
+                     securecart-postgres
+                       Headless Service
+                                |
+                                v
+                  +--------------------------+
+                  | PostgreSQL StatefulSet   |
+                  |                          |
+                  | securecart-postgres-0    |
+                  +--------------------------+
+                                |
+                                v
+                    PersistentVolumeClaim
+                                |
+                                v
+                       PersistentVolume
+```
+
+The external client communicates only with the NGINX Ingress Controller.
+
+The frontend, backend, and PostgreSQL workloads remain internal to the Kubernetes cluster.
+
+---
+
+## Application Request Flow
+
+A request for product data follows this path:
+
+```text
+Client
+  |
+  | HTTPS
+  v
+NGINX Ingress Controller
+  |
+  | HTTP :80
+  v
+Frontend Service
+  |
+  v
+Frontend NGINX
+  |
+  | /api/*
+  | HTTP :8000
+  v
+Backend Service
+  |
+  v
+FastAPI Backend
+  |
+  | SQL
+  | TCP :5432
+  v
+PostgreSQL
+  |
+  v
+Persistent Storage
+```
+
+For example:
+
+```text
+GET https://securecart.local/api/products
+```
+
+is received by the Ingress Controller and routed to the frontend Service.
+
+The frontend NGINX container recognizes `/api/*` and proxies the request to:
+
+```text
+securecart-backend-service:8000
+```
+
+The FastAPI backend receives the API request and queries PostgreSQL through:
+
+```text
+securecart-postgres:5432
+```
+
+PostgreSQL retrieves the requested product data from persistent storage and returns it to the backend.
+
+The response then travels back through the same application tiers to the client.
+
+---
+
+## PostgreSQL Architecture
+
+PostgreSQL is deployed as a Kubernetes StatefulSet:
+
+```text
+securecart-postgres
+```
+
+The current database topology contains one PostgreSQL Pod:
+
+```text
+securecart-postgres-0
+```
+
+A single replica is used intentionally because additional PostgreSQL replicas require database-level replication and coordination rather than simply increasing the Kubernetes replica count.
+
+The StatefulSet provides stable workload identity and manages persistent storage through a `volumeClaimTemplate`.
+
+---
+
+## PostgreSQL Service Discovery
+
+PostgreSQL is exposed internally through the headless Service:
+
+```text
+securecart-postgres
+```
+
+with:
+
+```yaml
+clusterIP: None
+```
+
+The backend therefore connects to the database using Kubernetes DNS:
+
+```text
+securecart-postgres:5432
+```
+
+rather than using the PostgreSQL Pod IP address.
+
+This separates application connectivity from the lifecycle of an individual database Pod.
+
+If `securecart-postgres-0` is recreated, the backend continues using the same Kubernetes service identity.
+
+---
+
+## Persistent Storage Architecture
+
+PostgreSQL data is stored independently of the database Pod lifecycle.
+
+```text
+PostgreSQL StatefulSet
+        |
+        v
+securecart-postgres-0
+        |
+        v
+PersistentVolumeClaim
+postgres-data-securecart-postgres-0
+        |
+        v
+PersistentVolume
+        |
+        v
+Kind Local Storage
+```
+
+The PostgreSQL StatefulSet requests:
+
+```text
+Capacity:    1 GiB
+Access Mode: ReadWriteOnce
+StorageClass: standard
+```
+
+The Kind `standard` StorageClass dynamically provisions the PersistentVolume.
+
+This allows the PostgreSQL container and Pod to be replaced without automatically destroying the database data.
+
+Persistence was validated by deliberately deleting:
+
+```text
+securecart-postgres-0
+```
+
+The StatefulSet recreated the Pod, the existing PersistentVolumeClaim remained bound, and the SecureCart product catalog remained available through the application API.
+
+---
+
+## Application Data Flow
+
+Product data is no longer stored in the FastAPI application process.
+
+The data ownership model is now:
+
+```text
+Frontend
+    |
+    | API request
+    v
+FastAPI
+    |
+    | SQL query
+    v
+PostgreSQL
+    |
+    | persistent data
+    v
+PersistentVolume
+```
+
+FastAPI remains responsible for application and API behavior.
+
+PostgreSQL is responsible for persistent application data.
+
+The PersistentVolume provides storage independently of the PostgreSQL Pod lifecycle.
+
+This separation prevents backend Pod recreation from affecting application data.
+
+---
+
+## Configuration and Secret Flow
+
+Runtime configuration and sensitive configuration are supplied separately.
+
+```text
+                    Kubernetes
+                  Configuration
+                       |
+          +------------+-------------+
+          |                          |
+          v                          v
+      ConfigMap                    Secret
+          |                          |
+          v                          v
+Frontend / Backend        Backend / PostgreSQL
+```
+
+ConfigMaps provide non-sensitive runtime application configuration.
+
+The Downward API supplies Kubernetes runtime metadata such as Pod identity.
+
+Kubernetes Secrets provide sensitive database configuration and credentials.
+
+Database credentials are not embedded directly into the application source code.
+
+---
+
+## Network Security Architecture
+
+SecureCart applies least-privilege communication between each application tier.
+
+```text
+                  ALLOWED
+ingress-nginx --------------> Frontend
+                                 |
+                                 | ALLOWED
+                                 v
+                              Backend
+                                 |
+                                 | ALLOWED
+                                 v
+                             PostgreSQL
+```
+
+Each workload is isolated using Kubernetes NetworkPolicies.
+
+The permitted paths are:
+
+```text
+ingress-nginx -> Frontend   TCP :80
+Frontend      -> Backend    TCP :8000
+Backend       -> PostgreSQL TCP :5432
+```
+
+Traffic outside those explicitly permitted paths is denied for the selected workloads.
+
+The resulting trust boundaries are:
+
+```text
+ingress-nginx -> Frontend :80       ALLOWED
+Other Pods    -> Frontend :80       DENIED
+
+Frontend      -> Backend :8000      ALLOWED
+Other Pods    -> Backend :8000      DENIED
+
+Backend       -> PostgreSQL :5432   ALLOWED
+Frontend      -> PostgreSQL :5432   DENIED
+Other Pods    -> PostgreSQL :5432   DENIED
+```
+
+This prevents workloads from receiving access to another application tier merely because they run inside the same Kubernetes cluster.
+
+---
+
+## Database Security Boundary
+
+The PostgreSQL tier is not exposed through the NGINX Ingress Controller.
+
+External clients cannot directly access:
+
+```text
+securecart-postgres:5432
+```
+
+The frontend also does not communicate directly with PostgreSQL.
+
+Database access must traverse the application architecture:
+
+```text
+Client
+   |
+   v
+Frontend
+   |
+   v
+Backend
+   |
+   v
+PostgreSQL
+```
+
+The backend is therefore the only SecureCart application tier permitted to establish PostgreSQL connections.
+
+NetworkPolicy controls whether a workload can establish the network connection, while PostgreSQL authentication separately controls database access.
+
+These controls provide independent layers of authorization.
+
+---
+
+## Stateful and Stateless Workloads
+
+SecureCart now contains both stateless and stateful Kubernetes workloads.
+
+### Stateless
+
+```text
+Frontend Deployment
+Backend Deployment
+```
+
+Frontend and backend Pods can be destroyed and replaced without preserving Pod-local application state.
+
+Multiple replicas can be distributed behind Kubernetes Services.
+
+### Stateful
+
+```text
+PostgreSQL StatefulSet
+```
+
+PostgreSQL requires persistent storage and stable workload identity.
+
+Its data lifecycle is therefore separated from the lifecycle of the PostgreSQL Pod using Kubernetes persistent storage.
+
+This distinction is an important architectural boundary within SecureCart.
+
+---
+
+## Current Kubernetes Workload Model
+
+```text
+Deployments
+├── securecart-frontend
+│   └── 3 replicas
+│
+└── securecart-backend
+    └── 2 replicas
+
+StatefulSets
+└── securecart-postgres
+    └── 1 replica
+
+Services
+├── securecart-service
+├── securecart-backend-service
+└── securecart-postgres
+
+Persistent Storage
+└── postgres-data-securecart-postgres-0
+    └── PersistentVolume
+
+NetworkPolicies
+├── allow-ingress-to-frontend
+├── allow-frontend-to-backend
+└── allow-backend-to-postgres
+```
+
+---
+
+## Current Architecture Summary
+
+SecureCart has evolved from a stateless frontend application into a stateful multi-tier Kubernetes architecture.
+
+```text
+                         Internet
+                            |
+                           HTTPS
+                            |
+                            v
+                         Ingress
+                            |
+                            v
+                         Frontend
+                            |
+                         TCP 8000
+                            |
+                            v
+                          Backend
+                            |
+                         TCP 5432
+                            |
+                            v
+                        PostgreSQL
+                            |
+                            v
+                    Persistent Storage
+```
+
+The architecture currently demonstrates:
+
+- Containerized application workloads
+- Stateless Deployments
+- StatefulSets
+- Kubernetes Services
+- Internal DNS-based service discovery
+- PersistentVolumes and PersistentVolumeClaims
+- Dynamic storage provisioning
+- Runtime configuration
+- Secret-based database configuration
+- HTTPS/TLS termination
+- Reverse proxy routing
+- Health management
+- Resource management
+- Least-privilege NetworkPolicies
+- Persistent application data
+- Separation of stateless compute from stateful storage
+
+The next architectural evolution will focus on making database provisioning reproducible through schema initialization and migrations before moving further into DevOps automation.

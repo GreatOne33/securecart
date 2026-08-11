@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: securecart-backend:0.1.0
+          image: securecart-backend:0.2.0
           imagePullPolicy: Never
 
           ports:
@@ -44,6 +44,29 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
 
+            - name: DB_HOST
+              value: "securecart-postgres"
+
+            - name: DB_PORT
+              value: "5432"
+
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: securecart-postgres-secret
+                  key: POSTGRES_DB
+
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: securecart-postgres-secret
+                  key: POSTGRES_USER
+
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: securecart-postgres-secret
+                  key: POSTGRES_PASSWORD
           startupProbe:
             httpGet:
               path: /health
@@ -77,4 +100,3 @@ spec:
             limits:
               cpu: "250m"
               memory: "256Mi"
-

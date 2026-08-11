@@ -8,7 +8,7 @@
 
 **Status:** In Progress
 
-**Current Phase:** Application Development
+**Current Phase:** DevOps Engineering
 
 ### Phase 1 - Kubernetes Foundations ✅
 
@@ -22,7 +22,7 @@
 - Ingress with TLS
 - NetworkPolicies
 
-### Phase 2 - Application Development 🚧
+### Phase 2 - Application Development ✅
 
 - Containerized SecureCart frontend
 - Python FastAPI backend
@@ -30,16 +30,21 @@
 - Kubernetes backend Deployment and Service
 - Frontend-to-backend NetworkPolicy
 - NGINX API reverse proxy
-- End-to-end frontend-to-backend integration
+- PostgreSQL persistent data layer
+- PostgreSQL StatefulSet
+- PersistentVolume and PersistentVolumeClaim storage
+- FastAPI-to-PostgreSQL integration
+- Database-backed product catalog
+- Backend-to-PostgreSQL NetworkPolicy
+- End-to-end persistence validation
 
-SecureCart now runs as a multi-tier Kubernetes application.
+SecureCart now runs as a stateful multi-tier Kubernetes application.
 
-The frontend is packaged as a self-contained NGINX container that renders runtime configuration during startup. The backend runs as an independently containerized FastAPI application with multiple Kubernetes replicas.
+The frontend is packaged as a self-contained NGINX container that renders runtime configuration during startup. The backend runs as an independently containerized FastAPI application with multiple Kubernetes replicas. PostgreSQL provides persistent application data through a StatefulSet and dynamically provisioned persistent storage.
 
-API requests are routed through the frontend NGINX container to an internal Kubernetes ClusterIP Service:
+Application traffic follows a least-privilege path:
 
 ```text
-
 Client
   |
   | HTTPS
@@ -58,17 +63,27 @@ Backend ClusterIP Service
   |
   v
 FastAPI Backend Pods
+  |
+  | TCP 5432
+  v
+PostgreSQL
+  |
+  v
+Persistent Storage
 
 ```
 
-**Next milestone:**
+NetworkPolicies restrict communication between application tiers so that only explicitly authorized workloads can communicate with the frontend, backend, and database.
 
-- Deploy PostgreSQL
-- Configure persistent storage
-- Connect the FastAPI backend to PostgreSQL
-- Replace in-memory product data with database-backed data
+Next milestone:
 
-SecureCart is an ongoing engineering project designed to simulate the work of a Cloud Infrastructure / Platform Engineer. The project follows production-style engineering practices including Infrastructure as Code, Git-based workflows, documentation, containerization, application networking, and Kubernetes deployments.
+- Implement database schema initialization and migrations
+- Build production Docker images
+- Publish images to a container registry
+- Create a Helm chart
+- Introduce automated testing and CI/CD
+
+SecureCart is an ongoing engineering project designed to simulate the work of a Cloud Infrastructure / Platform Engineer. The project follows production-style engineering practices including Infrastructure as Code, Git-based workflows, documentation, containerization, application networking, persistent storage, and Kubernetes deployments.
 
 ---
 
@@ -90,17 +105,24 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - Multi-tier Kubernetes application architecture
 - Custom containerized NGINX frontend
 - Python FastAPI backend
+- PostgreSQL persistent data layer
+- PostgreSQL StatefulSet
+- PersistentVolumeClaim-based storage
+- Database-backed product catalog
+- Psycopg PostgreSQL integration
 - Pydantic API response models
 - Runtime application configuration
 - Kubernetes Downward API integration
 - Multiple frontend and backend replicas
 - Kubernetes ClusterIP service discovery
+- Headless PostgreSQL Service
 - NGINX reverse proxy for `/api/*`
 - HTTPS/TLS through NGINX Ingress
 - Startup, readiness, and liveness probes
 - Resource requests and limits
-- Frontend and backend NetworkPolicies
-- Least-privilege frontend-to-backend communication
+- Frontend, backend, and database NetworkPolicies
+- Least-privilege tier-to-tier communication
+- Persistent data across PostgreSQL Pod recreation
 - End-to-end HTTPS application routing
 
 ---
@@ -219,13 +241,32 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] Local Docker integration test
 - [x] End-to-end Kubernetes integration test
 
+### Database and Persistent Storage
+
+- [x] PostgreSQL
+- [x] PostgreSQL StatefulSet
+- [x] Headless PostgreSQL Service
+- [x] PersistentVolumeClaim
+- [x] Dynamically provisioned PersistentVolume
+- [x] Stateful storage validation
+- [x] PostgreSQL Pod recreation testing
+- [x] FastAPI-to-PostgreSQL connectivity
+- [x] Database connectivity endpoint
+- [x] PostgreSQL-backed product catalog
+- [x] Application-level persistence validation
+- [x] Backend-to-PostgreSQL NetworkPolicy
+- [x] Unauthorized database access validation
+- [x] Least-privilege backend database access
+
 #### Next
 
-- [ ] Deploy PostgreSQL
-- [ ] Configure Persistent Volumes
-- [ ] Configure Persistent Volume Claims
-- [ ] Connect FastAPI to PostgreSQL
-- [ ] Replace in-memory product data with database-backed data
+- [ ] Implement database schema initialization and migrations
+- [ ] Build production Docker images
+- [ ] Publish images to registry
+- [ ] Create Helm chart
+- [ ] Configure GitHub Actions
+- [ ] Automated testing
+- [ ] Automated Kubernetes deployments
 
 ---
 
@@ -256,28 +297,49 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
                                 v
                 securecart-backend-service :8000
                                 |
-                  +-------------+-------------+
-                  |                           |
-                  v                           v
-        +-------------------+       +-------------------+
-        | FastAPI Backend   |       | FastAPI Backend   |
-        | Pod               |       | Pod               |
-        +-------------------+       +-------------------+
+                    +-----------+-----------+
+                    |                       |
+                    v                       v
+          +-------------------+   +-------------------+
+          | FastAPI Backend   |   | FastAPI Backend   |
+          | Pod               |   | Pod               |
+          +-------------------+   +-------------------+
+                    |                       |
+                    +-----------+-----------+
+                                |
+                                | TCP 5432
+                                | NetworkPolicy
+                                v
+                     securecart-postgres
+                     Headless Service
+                                |
+                                v
+                  +--------------------------+
+                  | PostgreSQL StatefulSet   |
+                  | securecart-postgres-0    |
+                  +--------------------------+
+                                |
+                                v
+                    PersistentVolumeClaim
+                                |
+                                v
+                       PersistentVolume
+
+```
 
 Configuration:
   ConfigMap ----------> Frontend / Backend
   Downward API -------> Pod Runtime Metadata
+  Secret -------------> Application / Database Credentials
 
 Network Boundaries:
   ingress-nginx ------> Frontend :80       ALLOWED
   Other workloads ---> Frontend :80       DENIED
   Frontend -----------> Backend :8000      ALLOWED
   Other workloads ---> Backend :8000      DENIED
-
-Future:
-  FastAPI Backend ---> PostgreSQL ---> Persistent Storage
-
-```
+  Backend ------------> PostgreSQL :5432   ALLOWED
+  Frontend -----------> PostgreSQL :5432   DENIED
+  Other workloads ---> PostgreSQL :5432   DENIED
 
 ---
 
@@ -294,6 +356,8 @@ Future:
 - Pydantic
 - Uvicorn
 - NGINX
+- PostgreSQL
+- Psycopg
 
 ### Containers and Orchestration
 
@@ -321,6 +385,11 @@ Future:
 - Health Probes
 - NetworkPolicies
 - Kubernetes DNS
+- StatefulSets
+- PersistentVolumes
+- PersistentVolumeClaims
+- StorageClasses
+- Headless Services
 
 ### Infrastructure as Code
 
@@ -426,7 +495,7 @@ Build the SecureCart backend:
 
 ```bash
 docker build \
-  -t securecart-backend:0.1.0 \
+  -t securecart-backend:0.2.0 \
   app/backend
 ```
 
@@ -476,6 +545,108 @@ kubectl apply \
   -f kubernetes/base/secrets/secret-example.yaml
 ```
 
+### Deploy PostgreSQL
+
+Apply the PostgreSQL Secret example:
+
+```bash
+kubectl apply \
+  -f kubernetes/base/secrets/postgres-secret-example.yaml
+```
+
+> The example Secret contains development-only credentials. Production credentials must not be committed to source control.
+
+Create the PostgreSQL headless Service:
+
+```bash
+kubectl apply \
+  -f kubernetes/base/postgres-service.yaml
+```
+
+Deploy the PostgreSQL StatefulSet:
+
+```bash
+kubectl apply \
+  -f kubernetes/base/postgres-statefulset.yaml
+```
+
+Wait for PostgreSQL to become Ready:
+
+```bash
+kubectl rollout status \
+  statefulset/securecart-postgres
+```
+
+Verify the database Pod and persistent storage:
+
+```bash
+kubectl get pod securecart-postgres-0
+
+kubectl get pvc
+
+kubectl get pv
+```
+
+Verify PostgreSQL readiness:
+
+```bash
+kubectl exec securecart-postgres-0 -- \
+  pg_isready \
+  -U securecart_app \
+  -d securecart
+```
+
+Expected:
+
+```text
+/var/run/postgresql:5432 - accepting connections
+```
+
+### Initialize the Development Database
+
+Database schema migrations have not yet been automated.
+
+For the current development release, initialize the product table manually:
+
+```bash
+kubectl exec securecart-postgres-0 -- \
+  psql \
+  -U securecart_app \
+  -d securecart \
+  -c "CREATE TABLE products (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        price NUMERIC(10,2) NOT NULL,
+        in_stock BOOLEAN NOT NULL DEFAULT true
+      );"
+```
+
+Seed the development product catalog:
+
+```bash
+kubectl exec securecart-postgres-0 -- \
+  psql \
+  -U securecart_app \
+  -d securecart \
+  -c "INSERT INTO products (name, price, in_stock)
+      VALUES
+      ('SecureCart T-Shirt', 24.99, true),
+      ('SecureCart Hoodie', 49.99, true),
+      ('SecureCart Sticker Pack', 6.99, false);"
+```
+
+Verify the data:
+
+```bash
+kubectl exec securecart-postgres-0 -- \
+  psql \
+  -U securecart_app \
+  -d securecart \
+  -c "SELECT * FROM products ORDER BY id;"
+```
+
+> Manual schema initialization is temporary. Automated database initialization and migrations are planned for Phase 3.
+
 ---
 
 ### Deploy the Backend
@@ -515,6 +686,34 @@ kubectl get endpointslice \
 ```
 
 ---
+
+### Apply the PostgreSQL NetworkPolicy
+
+Restrict PostgreSQL ingress to SecureCart backend workloads:
+
+```bash
+kubectl apply \
+  -f kubernetes/base/network-policies/allow-backend-to-postgres.yaml
+```
+
+Verify:
+```bash
+kubectl get networkpolicy
+```
+
+The complete application trust boundaries are:
+```text
+ingress-nginx -> Frontend :80       ALLOWED
+Other Pods    -> Frontend :80       DENIED
+
+Frontend      -> Backend :8000      ALLOWED
+Other Pods    -> Backend :8000      DENIED
+
+Backend       -> PostgreSQL :5432   ALLOWED
+Frontend      -> PostgreSQL :5432   DENIED
+Other Pods    -> PostgreSQL :5432   DENIED
+
+```
 
 ### Deploy the Frontend
 
@@ -599,6 +798,7 @@ kubectl patch deployment ingress-nginx-controller \
       }
     }
   }'
+
 ```
 
 Wait for the controller:
@@ -764,6 +964,69 @@ Frontend      -> Backend :8000      ALLOWED
 Other Pods    -> Backend :8000      DENIED
 ```
 
+### Validate PostgreSQL Network Isolation
+
+Verify that an unauthorized workload cannot reach PostgreSQL:
+
+```bash
+kubectl run postgres-test \
+  --image=postgres:17-alpine \
+  --restart=Never \
+  --rm -i \
+  -- pg_isready \
+  -h securecart-postgres \
+  -p 5432 \
+  -t 5
+  ```
+  Expected:
+
+  ```text
+  securecart-postgres:5432 - no response
+  ```
+
+  Verify that a frontend workload cannot reach PostgreSQL:
+  ```text
+  kubectl run frontend-postgres-test \
+  --image=postgres:17-alpine \
+  --restart=Never \
+  --labels="app=securecart,component=frontend" \
+  --rm -i \
+  -- pg_isready \
+  -h securecart-postgres \
+  -p 5432 \
+  -t 5
+  ```
+
+Expected:
+```text
+  securecart-postgres:5432 - no response
+  ```
+
+Verify that a backend workload can reach PostgreSQL:
+```text
+kubectl run backend-postgres-test \
+  --image=postgres:17-alpine \
+  --restart=Never \
+  --labels="app=securecart,component=backend" \
+  --rm -i \
+  -- pg_isready \
+  -h securecart-postgres \
+  -p 5432 \
+  -t 5
+```
+
+Expected:
+```text
+securecart-postgres:5432 - accepting connections
+```
+
+This validates the database trust boundary:
+```text
+Backend workload  -> PostgreSQL :5432   ALLOWED
+Frontend workload -> PostgreSQL :5432   DENIED
+Other workload    -> PostgreSQL :5432   DENIED
+```
+
 ---
 
 ### Validate Frontend Network Isolation
@@ -891,9 +1154,65 @@ Backend ClusterIP Service
   |
   v
 FastAPI Backend Pods
+  |
+  | SQL / TCP 5432
+  v
+PostgreSQL
+  |
+  v
+Persistent Storage
 ```
 
-The backend remains internal to the Kubernetes cluster and is not exposed directly through Ingress.
+And directly after it add:
+
+```markdown
+The frontend, backend, and PostgreSQL database remain internal Kubernetes workloads. Only the application entry point is exposed through Ingress.
+```
+
+### 10. Add persistence validation
+
+Before `### Final Deployment Verification`, add:
+
+````markdown
+### Validate Database Persistence
+
+Verify the current product catalog:
+
+```bash
+curl -i \
+  https://securecart.local/api/products
+```
+
+Delete the PostgreSQL Pod:
+
+```bash
+kubectl delete pod securecart-postgres-0
+```
+
+The StatefulSet automatically recreates the database Pod.
+
+Wait until it becomes Ready:
+
+```bash
+kubectl get pods -w
+```
+
+Then query the product API again:
+
+```bash
+curl -i \
+  https://securecart.local/api/products
+```
+
+The product catalog should remain available because PostgreSQL data is stored independently of the Pod lifecycle through the PersistentVolumeClaim.
+
+Verify that the claim remains bound:
+
+```bash
+kubectl get pvc
+
+kubectl get pv
+```
 
 ---
 
@@ -904,16 +1223,23 @@ Verify the complete application:
 ```bash
 kubectl get deployments
 
+kubectl get statefulsets
+
 kubectl get pods
 
 kubectl get svc
 
+kubectl get pvc
+
+kubectl get pv
+
 kubectl get ingress
 
 kubectl get networkpolicy
+
 ```
 
-Both frontend and backend Deployments should be available and all application Pods should be Ready.
+Frontend and backend Deployments should be available, the PostgreSQL StatefulSet should report `1/1` Ready, the database PVC should be `Bound`, and all application Pods should be Ready.
 
 ---
 
@@ -963,10 +1289,14 @@ securecart/
         ├── frontend-deployment.yaml
         ├── frontend-ingress.yaml
         ├── frontend-service.yaml
+        ├── postgres-service.yaml
+        ├── postgres-statefulset.yaml
         ├── network-policies/
+        │   ├── allow-backend-to-postgres.yaml
         │   ├── allow-frontend-to-backend.yaml
         │   └── allow-ingress-to-frontend.yaml
         └── secrets/
+            ├── postgres-secret-example.yaml
             └── secret-example.yaml
 
 ```
@@ -987,22 +1317,35 @@ Project documentation is maintained throughout development.
 
 ## 🚀 Current Focus
 
-**Current milestone:** Add the SecureCart persistent data layer
+**Current milestone:** Begin DevOps automation
 
-The stateless multi-tier application architecture is now operational:
+The SecureCart application architecture is now operational with persistent application data:
 
 ```text
-Frontend -> FastAPI Backend
+Frontend -> FastAPI Backend -> PostgreSQL -> Persistent Storage
 ```
+
+Phase 2 established:
+
+- Containerized frontend and backend application tiers
+- Kubernetes service discovery
+- End-to-end HTTPS application routing
+- PostgreSQL persistent storage
+- Database-backed product data
+- Stateful workload management
+- PersistentVolume and PersistentVolumeClaim storage
+- Least-privilege NetworkPolicies between application tiers
+- Application persistence across database Pod recreation
 
 Upcoming work:
 
-- Deploy PostgreSQL
-- Configure Persistent Volumes
-- Configure Persistent Volume Claims
-- Connect FastAPI to PostgreSQL
-- Replace in-memory product data with database-backed data
-- Apply least-privilege network access between the backend and database
+- Implement database schema initialization and migrations
+- Build production Docker images
+- Publish images to a container registry
+- Create a Helm chart
+- Configure GitHub Actions
+- Introduce automated testing
+- Automate Kubernetes deployments
 
 **Long-term goal:** Deploy SecureCart to Amazon EKS using Terraform, Helm, and GitHub Actions.
 
