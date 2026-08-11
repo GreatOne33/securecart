@@ -523,7 +523,7 @@ Load the backend image:
 
 ```bash
 kind load docker-image \
-  securecart-backend:0.1.0 \
+  securecart-backend:0.2.0 \
   --name securecart
 ```
 
@@ -1163,17 +1163,10 @@ PostgreSQL
 Persistent Storage
 ```
 
-And directly after it add:
-
-```markdown
 The frontend, backend, and PostgreSQL database remain internal Kubernetes workloads. Only the application entry point is exposed through Ingress.
-```
 
-### 10. Add persistence validation
+---
 
-Before `### Final Deployment Verification`, add:
-
-````markdown
 ### Validate Database Persistence
 
 Verify the current product catalog:
@@ -1236,7 +1229,6 @@ kubectl get pv
 kubectl get ingress
 
 kubectl get networkpolicy
-
 ```
 
 Frontend and backend Deployments should be available, the PostgreSQL StatefulSet should report `1/1` Ready, the database PVC should be `Bound`, and all application Pods should be Ready.
@@ -1257,7 +1249,6 @@ kind delete cluster \
 ## 📁 Repository Structure
 
 ```text
-
 securecart/
 ├── app/
 │   ├── frontend/
@@ -1298,7 +1289,6 @@ securecart/
         └── secrets/
             ├── postgres-secret-example.yaml
             └── secret-example.yaml
-
 ```
 
 ---
@@ -1307,13 +1297,11 @@ securecart/
 
 Project documentation is maintained throughout development.
 
-```text
 - [Engineering Journal](docs/engineering-journal.md)
 - [Architecture](docs/architecture.md)
 - [Design Decisions](docs/decisions.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Roadmap](docs/roadmap.md)
-```
 
 ---
 
