@@ -1,5 +1,6 @@
 # Local development files
 .local/
+.venv/
 
 # Terraform
 *.tfstate

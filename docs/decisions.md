@@ -24,7 +24,7 @@ A future backend API should expose dedicated endpoints such as:
 
 These endpoints should evaluate application dependencies appropriately rather than relying only on the root application path.
 
---- 
+---
 
 ## ADR-002: Resource Request Strategy
 
@@ -102,3 +102,208 @@ This architectural change provides several advantages:
 
 This approach aligns with the principle that applications should own their initialization whenever practical, while Kubernetes remains responsible for deployment, scheduling, and runtime configuration.
 
+---
+
+## ADR-006: Backend Service and Network Segmentation Strategy
+
+**Introduced:** v0.8.0
+
+SecureCart runs the backend API as an independently containerized FastAPI workload inside Kubernetes.
+
+The backend is deployed using a Kubernetes Deployment with multiple replicas and is exposed internally through the `securecart-backend-service` ClusterIP Service on TCP port 8000.
+
+A ClusterIP Service was selected because the backend does not require direct external access. Workloads inside the cluster communicate with the backend using Kubernetes DNS rather than individual Pod IP addresses.
+
+The frontend uses:
+
+```text
+securecart-backend-service:8000
+
+```
+
+as the stable backend network endpoint.
+
+Backend Pods are identified using:
+
+```text
+app=securecart
+component=backend
+
+```
+
+Ingress to the backend Pods is restricted using a Kubernetes NetworkPolicy.
+
+The policy permits TCP port 8000 only from Pods matching the frontend workload identity:
+
+```text
+Frontend Pods -> Backend Pods   Allowed
+Other Pods    -> Backend Pods   Denied
+
+```
+
+The policy relies on Kubernetes workload labels rather than Pod IP addresses because Pod addresses are ephemeral and should not be treated as stable application identities.
+
+This design keeps the backend internal to the cluster while applying least-privilege network access between application tiers.
+
+Future components such as databases, workers, or additional services will receive their own workload identities and NetworkPolicies rather than broadening the existing backend rule.
+
+---
+
+## ADR-007: Frontend Reverse Proxy Strategy
+
+**Introduced:** v0.8.0
+
+SecureCart uses the frontend NGINX container as a reverse proxy for backend API requests.
+
+External clients access SecureCart through the existing HTTPS Ingress endpoint:
+
+```text
+https://securecart.local
+
+```
+
+Requests for frontend content are served directly by the frontend NGINX container.
+
+Requests under:
+
+```text
+/api/
+
+```
+
+are proxied by frontend NGINX to the internal FastAPI backend through:
+
+```text
+securecart-backend-service:8000
+
+```
+
+The resulting request path is:
+
+```text
+
+Client
+  |
+  | HTTPS
+  v
+NGINX Ingress Controller
+  |
+  v
+Frontend Service
+  |
+  v
+Frontend NGINX
+  |
+  | /api/*
+  v
+Backend ClusterIP Service
+  |
+  v
+FastAPI Backend Pods
+
+```
+
+This design was selected instead of exposing the backend directly through Kubernetes Ingress.
+
+Keeping the backend behind the frontend provides several advantages:
+
+-   The backend remains an internal ClusterIP Service.
+-   External clients require only one application origin.
+-   Kubernetes-internal DNS names are not exposed to browser clients.
+-   Frontend-to-backend traffic can be controlled using NetworkPolicy.
+-   Backend Pod and Service implementation details remain hidden from external clients.
+-   Frontend and backend routing responsibilities remain clearly separated.
+
+The backend destination is configured when the frontend container starts using:
+
+```text
+BACKEND_HOST
+BACKEND_PORT
+
+```
+
+For the local Kubernetes environment:
+
+```text
+BACKEND_HOST=securecart-backend-service
+BACKEND_PORT=8000
+
+```
+
+The NGINX configuration is rendered from a template when the frontend container starts.
+
+This allows the same frontend image to use different backend destinations across local Docker, Kubernetes, and future cloud environments without rebuilding the image.
+
+The design preserves separation of responsibilities:
+
+```text
+Ingress Controller
+    External HTTPS routing
+
+Frontend NGINX
+    Application routing and API proxying
+
+Backend Service
+    Kubernetes service discovery
+
+NetworkPolicy
+    Workload-to-workload network authorization
+
+FastAPI
+    Application and API logic
+
+```
+
+Future AWS deployment will preserve this separation where practical while allowing implementation details such as ingress, load balancing, DNS, and TLS termination to evolve.
+
+---
+
+ADR-008: Backend API Framework and Health Strategy
+
+Introduced: v0.8.0
+
+SecureCart uses Python with FastAPI for the backend application API.
+
+FastAPI was selected to provide a lightweight API layer with built-in request validation, response modeling, OpenAPI generation, and integration with Python type annotations.
+
+Pydantic models define the structure of API resources such as SecureCart products. This provides an explicit application contract rather than relying on unvalidated data structures.
+
+The backend currently exposes:
+
+```text
+GET /health
+GET /api/status
+GET /api/products
+GET /api/products/{product_id}
+
+```
+
+Unlike the frontend, the backend exposes a dedicated /health endpoint.
+
+Kubernetes health probes use this endpoint instead of the application root path. This separates application health checking from normal API functionality and establishes a foundation for more sophisticated health checks as backend dependencies are introduced.
+
+The current /health endpoint verifies that the FastAPI application is running and able to respond to requests.
+
+When PostgreSQL is introduced, the health strategy will be revisited so readiness can reflect whether the application is capable of serving requests that depend on required backend services.
+
+The API currently uses in-memory product data while the application architecture is developed.
+
+This is intentionally temporary.
+
+The planned architecture is:
+
+```text
+
+Frontend
+   |
+   v
+FastAPI Backend
+   |
+   v
+PostgreSQL
+
+```
+
+Database integration will replace the current in-memory product data while preserving the external API contract where practical.
+
+---

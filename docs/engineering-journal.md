@@ -43,7 +43,7 @@ Resolution:
 ```bash
 kind version
 
-``` 
+```
 
 
 ### Lessons Learned
@@ -134,7 +134,7 @@ kubectl get pods --watch
 kubectl delete pod <pod-name>
 kubectl scale deployment securecart-frontend --replicas=3
 kubectl scale deployment securecart-frontend --replicas=1
-``` 
+```
 
 ### Challenges
 
@@ -306,7 +306,6 @@ During the rollback, Kubernetes restored the previous Pod template and scaled it
 - Deployment revisions track changes to the Pod template, not changes to the Service.
 
 ## Key Takeaways
-
 Kubernetes separates application networking from application releases:
 
 ```text
@@ -425,7 +424,7 @@ This follows the Principle of Least Privilege and keeps the Deployment aligned w
 
 ## Session 8 - Kubernetes Health Probes
 
-**Milestone:** Application Health and Reliability  
+**Milestone:** Application Health and Reliability
 **Status:** Completed
 
 ### Objective
@@ -571,7 +570,7 @@ Verified:
 
 ### Validation commands included:
 
-``` bash
+```bash
 kubectl describe pod <pod-name>
 
 kubectl get deployment securecart-frontend \
@@ -601,7 +600,7 @@ Each container may burst up to:
   250m CPU
   256Mi Memory
 
---- 
+---
 
 Metrics
 
@@ -613,7 +612,7 @@ kubectl top pods
 ```
 
 ### Result:
-  
+
   Metrics API not available
 
 The local Kind cluster does not include Metrics Server by default.
@@ -662,7 +661,7 @@ Verified:
 - SecureCart is accessible through both curl and a web browser
 
 ### Commands used:
-``` bash
+```bash
 curl -I https://securecart.local
 
 curl -I http://securecart.local
@@ -678,9 +677,9 @@ openssl s_client \
 Initial connection failures
 
 After recreating the Kind cluster, requests to securecart.local returned:
-``` text
+```text
 
-  Recv failure: Connection reset by peer 
+  Recv failure: Connection reset by peer
 ```
 
 Root cause:
@@ -715,7 +714,7 @@ In production, certificates would be issued by a trusted Certificate Authority u
 
 ## Session 11 - Kubernetes NetworkPolicies
 
-**Milestone:** Network Segmentation and Least-Privilege Access  
+**Milestone:** Network Segmentation and Least-Privilege Access
 **Status:** Completed
 
 ### Objective
@@ -763,7 +762,7 @@ kubectl rollout restart daemonset/kindnet -n kube-system
 kubectl rollout status daemonset/kindnet \
   -n kube-system \
   --timeout=180s
-  
+
 ```
 
 After the restart, policy changes were enforced correctly.
@@ -968,4 +967,499 @@ The issue was resolved by restarting the Kind networking DaemonSet (`kindnet`), 
 This session marked the transition from learning Kubernetes primitives to building production-style containerized applications.
 
 SecureCart no longer depends on Kubernetes Init Containers to generate application content. Instead, Kubernetes is responsible for scheduling and configuration while the application image owns its startup process.
+
+## Session 13 - Backend API and Multi-Tier Application Integration
+
+**Date:** August 10, 2026
+
+**Milestone:** Backend API and Frontend-to-Backend Integration
+
+**Status:** Completed
+
+### Objective
+
+Extend SecureCart from a frontend-only Kubernetes application into a multi-tier application by building a Python backend API, containerizing it, deploying it to Kubernetes, restricting access with NetworkPolicy, and integrating the frontend with the backend through an internal Kubernetes Service.
+
+### Backend Development
+
+Created the backend application under:
+
+```text
+app/backend/
+```
+
+The backend was implemented using Python, FastAPI, Uvicorn, and Pydantic.
+
+A Python virtual environment was created to isolate local application dependencies:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+The .venv directory was added to .gitignore so local Python dependencies are not committed to source control.
+
+### Initial API Endpoints
+
+Implemented the first application endpoints:
+
+```text
+GET /health
+GET /api/status
+GET /api/products
+GET /api/products/{product_id}
+
+```
+The health endpoint provides a simple application health check:
+```text
+{
+  "status": "healthy"
+}
+
+```
+
+The status endpoint exposes runtime application information including:
+
+- Application name
+- Version
+- Environment
+- Pod or container name
+- Runtime status
+
+The products endpoint introduced the first application data served by SecureCart.
+
+### API Modeling and Validation
+
+Created Pydantic models for the product API rather than returning completely unstructured dictionaries.
+
+The product model defines:
+
+- id
+- name
+- price
+- in_stock
+
+FastAPI uses these models to validate response data and generate API documentation.
+
+The generated OpenAPI documentation was verified through the FastAPI /docs interface.
+
+### Product Lookup and HTTP Behavior
+
+Implemented an endpoint for retrieving an individual product:
+
+```text
+GET /api/products/{product_id}
+```
+
+Validated multiple API outcomes:
+
+```text
+/api/products/2       -> 200 OK
+/api/products/999     -> 404 Not Found
+/api/products/banana  -> 422 validation response
+
+```
+
+This demonstrated the distinction between:
+
+- Successful application responses
+- Application-level missing resources
+- Framework-level input validation
+
+FastAPI automatically validated that product_id must be an integer.
+
+### Backend Containerization
+
+Created a Docker image for the FastAPI backend:
+
+```text
+securecart-backend:0.1.0
+
+```
+
+The container was tested locally before Kubernetes deployment.
+
+Validation included:
+
+```bash
+curl -i http://localhost:8001/health
+curl -i http://localhost:8001/api/status
+curl -i http://localhost:8001/api/products
+
+```
+
+The container successfully returned application health, runtime metadata, and product data.
+
+### Kubernetes Backend Deployment
+
+Loaded the backend image into the local Kind cluster:
+
+```bash
+kind load docker-image \
+  securecart-backend:0.1.0 \
+  --name securecart
+
+```
+
+Created:
+
+```text
+kubernetes/base/backend-deployment.yaml
+
+```
+
+The backend Deployment runs two replicas of the FastAPI application.
+
+The Deployment also provides Kubernetes runtime configuration to the application, including environment information and the Pod name through the Downward API.
+
+The rollout was validated using:
+
+```bash
+kubectl rollout status deployment/securecart-backend
+
+kubectl get pods \
+  -l app=securecart,component=backend
+
+```
+
+Both backend Pods reached the Running and Ready states.
+
+### Container Debugging Observation
+
+Attempted to test the API from inside the backend container using wget.
+
+The command failed because the backend image does not contain wget.
+
+Instead of modifying the production image only for debugging, Python's standard library was used:
+
+```bash
+kubectl exec <backend-pod> -- \
+  python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/api/status').read().decode())"
+
+```
+
+This successfully verified that the FastAPI process was reachable from inside its own container.
+
+### Backend Service and Service Discovery
+
+Created:
+
+```text
+
+kubernetes/base/backend-service.yaml
+
+```
+
+The backend is exposed internally through a ClusterIP Service:
+
+```text
+
+securecart-backend-service:8000
+
+```
+
+Verified that the Service discovered both backend replicas through EndpointSlices.
+
+Internal connectivity was tested using a temporary BusyBox Pod:
+
+```bash
+kubectl run backend-test \
+  --image=busybox:1.36 \
+  --restart=Never \
+  --rm -i \
+  -- wget -qO- http://securecart-backend-service:8000/api/status
+
+```
+
+The request successfully reached the FastAPI backend.
+
+### Service Load Distribution
+
+Repeated requests were sent through securecart-backend-service.
+
+Responses were observed from both backend Pods.
+
+This demonstrated that clients communicate with the stable Service endpoint while Kubernetes distributes requests across the available backend endpoints.
+
+The client did not need to know individual backend Pod names or IP addresses.
+
+### Backend Network Segmentation
+
+Created:
+
+```text
+kubernetes/base/network-policies/allow-frontend-to-backend.yaml
+
+```
+
+The policy selects backend Pods:
+
+```text
+The policy selects backend Pods:
+
+```
+
+and permits inbound TCP traffic on port 8000 only from Pods matching:
+
+```text
+app=securecart
+component=frontend
+
+```
+
+After NetworkPolicy enforcement was reconciled, an unlabeled temporary BusyBox Pod could no longer reach the backend Service:
+
+```text
+wget: download timed out
+```
+
+A test Pod carrying the frontend identity labels successfully reached the backend.
+
+This validated the intended least-privilege path:
+
+```text
+Frontend -> Backend    ALLOWED
+Other Pods -> Backend  BLOCKED
+```
+
+### Kind NetworkPolicy Behavior
+
+The local Kind environment again exhibited delayed or stale NetworkPolicy enforcement after policy changes.
+
+The policy YAML and Pod labels were correct, but traffic behavior did not initially reflect the configured policy.
+
+Restarting the Kind networking DaemonSet reconciled enforcement:
+
+```bash
+kubectl rollout restart daemonset/kindnet -n kube-system
+
+kubectl rollout status daemonset/kindnet \
+  -n kube-system \
+  --timeout=180s
+```
+
+After the restart:
+
+- Unapproved Pod traffic timed out.
+- Frontend-labeled traffic successfully reached the backend.
+
+This reinforced the importance of distinguishing configuration errors from local CNI implementation behavior during troubleshooting.
+
+### Frontend Reverse Proxy
+
+The frontend was extended so browser requests can reach the backend without exposing the FastAPI Service externally.
+
+Created:
+
+```text
+app/frontend/nginx.conf.template
+```
+
+NGINX now proxies requests under:
+
+```text
+/api/
+
+```
+
+to a configurable backend destination.
+
+The frontend startup process renders the NGINX configuration using:
+
+```text
+BACKEND_HOST
+BACKEND_PORT
+
+```
+
+This allows the same frontend image to use different backend locations depending on its runtime environment.
+
+For Kubernetes:
+
+```text
+
+BACKEND_HOST=securecart-backend-service
+BACKEND_PORT=8000
+
+```
+
+The frontend therefore discovers the backend through Kubernetes DNS rather than using Pod IP addresses.
+
+### Frontend Image v0.2.0
+
+Built a new frontend image:
+
+```text
+securecart-frontend:0.2.0
+
+```
+
+The new image contains both:
+
+- Runtime HTML rendering
+- NGINX API reverse-proxy configuration
+
+The image was first tested locally with Docker before being deployed to Kubernetes.
+
+Local Multi-Container Validation
+
+Ran the frontend and backend as separate Docker containers.
+
+The frontend remained accessible at:
+
+```text
+http://localhost:8081
+```
+
+A request to:
+
+```text
+http://localhost:8081/api/products
+```
+
+was received by frontend NGINX and proxied to the backend container.
+
+The backend returned the SecureCart product catalog successfully.
+
+This proved the frontend/backend integration independently of Kubernetes before deploying the same architecture into the cluster.
+
+### Kubernetes Multi-Tier Integration
+
+Loaded securecart-frontend:0.2.0 into Kind and updated the frontend Deployment.
+
+The frontend was configured to use:
+
+```text
+securecart-backend-service
+```
+
+as its backend destination.
+
+The complete request path became:
+
+```text
+Client
+  |
+  | HTTPS
+  v
+NGINX Ingress Controller
+  |
+  v
+Frontend Service
+  |
+  v
+Frontend NGINX Pod
+  |
+  | /api/*
+  v
+Backend ClusterIP Service
+  |
+  v
+FastAPI Backend Pods
+
+```
+
+### End-to-End Validation
+
+The complete application path was tested using:
+
+```text
+curl -i https://securecart.local/api/products
+```
+
+Result:
+
+```text
+HTTP/2 200
+content-type: application/json
+```
+
+The response contained the SecureCart product catalog.
+
+This proved that a request could travel successfully through:
+
+```text
+HTTPS
+-> Ingress
+-> Frontend Service
+-> Frontend NGINX
+-> Kubernetes DNS
+-> Backend Service
+-> FastAPI Pod
+-> JSON response
+
+```
+
+while keeping the backend Service internal to the cluster.
+
+### Engineering Decisions
+- Used Python and FastAPI for the SecureCart backend.
+- Used Pydantic models for API response structure and validation.
+- Containerized the backend independently from the frontend.
+- Tested containers locally before deploying them into Kubernetes.
+- Used a ClusterIP Service so the backend remains internal to the cluster.
+- Used Kubernetes DNS for frontend-to-backend service discovery.
+- Used two backend replicas to demonstrate workload distribution and availability.
+- Restricted backend ingress to frontend workloads using NetworkPolicy.
+- Kept debugging utilities out of the backend image when existing Python functionality could perform the required test.
+- Used the frontend NGINX container as a reverse proxy instead of exposing the backend directly through Ingress.
+- Made the backend destination runtime-configurable rather than hardcoding environment-specific addresses into the frontend image.
+
+### Lessons Learned
+- A multi-tier application should separate frontend and backend responsibilities into independently deployable workloads.
+- FastAPI automatically provides useful request validation and OpenAPI documentation.
+- Pydantic provides explicit contracts for API data instead of relying on arbitrary dictionaries.
+- HTTP status codes represent different failure layers: 404 can represent application logic while 422 can result from request validation before application logic executes.
+- Containers do not need general-purpose troubleshooting utilities installed if existing application runtime tools can perform the required diagnostics.
+- Kubernetes Services allow applications to communicate without knowing Pod IP addresses.
+- EndpointSlices represent the backend endpoints available behind a Service.
+- Multiple replicas can receive requests behind one stable Service identity.
+- NetworkPolicy can enforce application-tier boundaries based on workload identity rather than IP addresses.
+- Kubernetes DNS provides stable service discovery between application tiers.
+- Browser-side JavaScript cannot directly resolve Kubernetes-only Service DNS names.
+- A reverse proxy provides a clean boundary between external application routes and internal Kubernetes services.
+- Runtime configuration allows the same container image to operate in multiple environments.
+- Local Docker integration testing helps separate application problems from Kubernetes problems.
+- End-to-end testing is necessary because successful individual component tests do not guarantee that the complete request path works.
+- CNI behavior must be considered when a valid NetworkPolicy does not appear to take effect immediately in a local Kind environment.
+
+Key Takeaways
+
+This session transformed SecureCart from a containerized frontend into a functioning multi-tier application.
+
+The architecture now separates external traffic, frontend presentation, backend application logic, service discovery, and network authorization:
+
+```text
+
+External Client
+      |
+    HTTPS
+      |
+      v
+Ingress Controller
+      |
+      v
+Frontend
+      |
+  NetworkPolicy
+      |
+      v
+Backend Service
+      |
+      v
+FastAPI Replicas
+
+```
+
+The backend remains inaccessible to arbitrary workloads while approved frontend workloads can communicate with it through a stable Kubernetes Service.
+
+Most importantly, the same frontend and backend containers can be tested independently with Docker and then deployed into Kubernetes, keeping application behavior separate from orchestration.
+
+### Next Session
+- Update project architecture documentation and ADRs.
+- Review the complete multi-tier Kubernetes configuration.
+- Commit the backend and integration milestone.
+- Create the next SecureCart release.
+- Begin the next application-development milestone.
 

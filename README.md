@@ -24,22 +24,51 @@
 
 ### Phase 2 - Application Development 🚧
 
-✅ Custom SecureCart frontend image
+✅ Containerized SecureCart frontend
+✅ Python FastAPI backend
+✅ Containerized backend API
+✅ Kubernetes backend Deployment and Service
+✅ Frontend-to-backend NetworkPolicy
+✅ NGINX API reverse proxy
+✅ End-to-end frontend-to-backend integration
 
-The frontend is now packaged as a self-contained Docker image instead of relying on a Kubernetes Init Container to render application content.
+SecureCart now runs as a multi-tier Kubernetes application.
 
-The container:
+The frontend is packaged as a self-contained NGINX container that renders runtime configuration during startup. The backend runs as an independently containerized FastAPI application with multiple Kubernetes replicas.
 
-- Generates the application page during startup
-- Reads configuration from Kubernetes environment variables
-- Uses the Downward API to display the current Pod
-- Starts NGINX automatically through a custom entrypoint
+API requests are routed through the frontend NGINX container to an internal Kubernetes ClusterIP Service:
+
+```text
+
+Client
+  |
+  | HTTPS
+  v
+Ingress Controller
+  |
+  v
+Frontend Service
+  |
+  v
+Frontend NGINX
+  |
+  | /api/*
+  v
+Backend ClusterIP Service
+  |
+  v
+FastAPI Backend Pods
+
+```
 
 **Next milestone:**
 
-- Containerize the backend API
+- Deploy PostgreSQL
+- Configure persistent storage
+- Connect the FastAPI backend to PostgreSQL
+- Replace in-memory product data with database-backed data
 
-SecureCart is an ongoing engineering project designed to simulate the work of a Cloud Infrastructure / Platform Engineer. The project follows production-style engineering practices including Infrastructure as Code, Git-based workflows, documentation, and Kubernetes deployments.
+SecureCart is an ongoing engineering project designed to simulate the work of a Cloud Infrastructure / Platform Engineer. The project follows production-style engineering practices including Infrastructure as Code, Git-based workflows, documentation, containerization, application networking, and Kubernetes deployments.
 
 ---
 
@@ -58,10 +87,21 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 
 ## ✨ Current Features
 
-- Custom SecureCart frontend Docker image
-- Self-contained application startup
-- Containerized frontend rendering
-- Kubernetes-independent application image
+- Multi-tier Kubernetes application architecture
+- Custom containerized NGINX frontend
+- Python FastAPI backend
+- Pydantic API response models
+- Runtime application configuration
+- Kubernetes Downward API integration
+- Multiple frontend and backend replicas
+- Kubernetes ClusterIP service discovery
+- NGINX reverse proxy for `/api/*`
+- HTTPS/TLS through NGINX Ingress
+- Startup, readiness, and liveness probes
+- Resource requests and limits
+- Frontend and backend NetworkPolicies
+- Least-privilege frontend-to-backend communication
+- End-to-end HTTPS application routing
 
 ---
 
@@ -125,51 +165,117 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] Host-based Routing
 - [x] HTTPS/TLS
 - [x] HTTP Redirects
+- [x] Backend Service Discovery
+- [x] EndpointSlice Validation
+- [x] Frontend NGINX Reverse Proxy
+- [x] Internal API Routing
 
 ### Network Security
 
 - [x] Isolate frontend Pods
 - [x] Allow ingress-nginx namespace on TCP 80
-- [x] Block unauthorized Pod access
+- [x] Block unauthorized frontend access
+- [x] Isolate backend Pods
+- [x] Allow frontend workloads to backend TCP 8000
+- [x] Block unauthorized backend access
 - [x] Validate allowed and denied traffic paths
 
-### Application Containerization
+#### Application Containerization
 
 - [x] Custom frontend Docker image
 - [x] Docker entrypoint rendering
-- [x] Local Docker validation
-- [x] Image loaded into Kind
-- [x] Deployment migrated to custom image
+- [x] Local frontend Docker validation
+- [x] Frontend image loaded into Kind
+- [x] Deployment migrated to custom frontend image
 - [x] Removed Init Container architecture
+- [x] Custom backend Docker image
+- [x] Local backend Docker validation
+- [x] Backend image loaded into Kind
+- [x] Frontend and backend local integration testing
+
+### Backend API
+
+- [x] Python FastAPI application
+- [x] Health endpoint
+- [x] Runtime status endpoint
+- [x] Product collection endpoint
+- [x] Individual product endpoint
+- [x] Pydantic response models
+- [x] HTTP 404 handling
+- [x] Request validation
+- [x] OpenAPI documentation
+- [x] Kubernetes backend Deployment
+- [x] Multiple backend replicas
+- [x] Backend ClusterIP Service
+- [x] Backend health probes
+- [x] Backend Pod metadata through Downward API
+
+### Application Integration
+
+- [x] Frontend-to-backend Kubernetes DNS
+- [x] NGINX `/api/*` reverse proxy
+- [x] Frontend-to-backend NetworkPolicy
+- [x] Backend Service load distribution
+- [x] Local Docker integration test
+- [x] End-to-end Kubernetes integration test
 
 #### Next
 
-- [ ] Build backend API
-- [ ] Containerize backend
+- [ ] Deploy PostgreSQL
+- [ ] Configure Persistent Volumes
+- [ ] Configure Persistent Volume Claims
+- [ ] Connect FastAPI to PostgreSQL
+- [ ] Replace in-memory product data with database-backed data
 
 ---
 
 ## 🏗️ Current Architecture
 
 ```text
-                   Kubernetes
-                        │
-        ┌───────────────┴────────────────┐
-        │                                │
-   ConfigMap                      Downward API
-        │                                │
-        └───────────────┬────────────────┘
-                        │
-                        ▼
-        SecureCart Frontend Container
-      ┌───────────────────────────────┐
-      │ HTML Template                 │
-      │ Startup Script (envsubst)     │
-      │ NGINX                         │
-      └───────────────────────────────┘
-                        │
-                        ▼
-                    HTTPS via Ingress
+                         External Client
+                                |
+                              HTTPS
+                                |
+                                v
+                     NGINX Ingress Controller
+                                |
+                                v
+                     securecart-service :80
+                                |
+                                v
+                 +-----------------------------+
+                 | SecureCart Frontend Pods    |
+                 |                             |
+                 | NGINX                       |
+                 | Runtime HTML Rendering      |
+                 | /api/* Reverse Proxy        |
+                 +-----------------------------+
+                                |
+                                | TCP 8000
+                                | NetworkPolicy
+                                v
+                securecart-backend-service :8000
+                                |
+                  +-------------+-------------+
+                  |                           |
+                  v                           v
+        +-------------------+       +-------------------+
+        | FastAPI Backend   |       | FastAPI Backend   |
+        | Pod               |       | Pod               |
+        +-------------------+       +-------------------+
+
+Configuration:
+  ConfigMap ----------> Frontend / Backend
+  Downward API -------> Pod Runtime Metadata
+
+Network Boundaries:
+  ingress-nginx ------> Frontend :80       ALLOWED
+  Other workloads ---> Frontend :80       DENIED
+  Frontend -----------> Backend :8000      ALLOWED
+  Other workloads ---> Backend :8000      DENIED
+
+Future:
+  FastAPI Backend ---> PostgreSQL ---> Persistent Storage
 
 ```
 
@@ -181,13 +287,20 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 
 - AWS *(planned)*
 
+### Application
+
+- Python
+- FastAPI
+- Pydantic
+- Uvicorn
+- NGINX
+
 ### Containers and Orchestration
 
 - Docker
 - Dockerfiles
 - Kubernetes
 - Kind
-- NGINX
 - Helm
 
 ### Kubernetes
@@ -207,6 +320,7 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - Resource Requests and Limits
 - Health Probes
 - NetworkPolicies
+- Kubernetes DNS
 
 ### Infrastructure as Code
 
@@ -226,6 +340,17 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 ---
 
 ## ▶️ Deploy Locally
+
+The following steps deploy the complete SecureCart application to a local Kind cluster.
+
+The deployment includes:
+
+- SecureCart frontend
+- FastAPI backend
+- Kubernetes Services
+- NGINX Ingress Controller
+- HTTPS/TLS
+- Frontend and backend NetworkPolicies
 
 ### Prerequisites
 
@@ -251,7 +376,7 @@ curl --version
 
 ---
 
-## Clone the Repository
+### Clone the Repository
 
 ```bash
 git clone https://github.com/GreatOne33/securecart.git
@@ -261,7 +386,7 @@ cd securecart
 
 ---
 
-## Create the Kind Cluster
+### Create the Kind Cluster
 
 ```bash
 kind create cluster \
@@ -279,70 +404,186 @@ kubectl get nodes
 
 Expected:
 
-```
-NAME                 STATUS   ROLES           AGE
-securecart-control-plane   Ready   control-plane
-securecart-worker          Ready   <none>
-```
-
----
-
-## Deploy SecureCart
-
-```bash
-kubectl apply -f kubernetes/base/configmap.yaml
-kubectl apply -f kubernetes/base/secrets/secret-example.yaml
-kubectl apply -f kubernetes/base/frontend-deployment.yaml
-kubectl apply -f kubernetes/base/frontend-service.yaml
-
-```
-
-Verify:
-
-```bash
-kubectl get deployments
-
-kubectl get pods
-```
-
-Wait until the pod shows:
-
-```
-READY   STATUS
-1/1     Running
+```text
+NAME                       STATUS   ROLES           AGE
+securecart-control-plane   Ready    control-plane
+securecart-worker          Ready    <none>
 ```
 
 ---
 
-## Deploy the Service
+### Build the Application Images
+
+Build the SecureCart frontend:
 
 ```bash
+docker build \
+  -t securecart-frontend:0.2.0 \
+  app/frontend
+```
+
+Build the SecureCart backend:
+
+```bash
+docker build \
+  -t securecart-backend:0.1.0 \
+  app/backend
+```
+
+Verify both images:
+
+```bash
+docker images | grep securecart
+```
+
+---
+
+### Load the Images into Kind
+
+Kind nodes use their own container runtime, so locally built images must be loaded into the cluster.
+
+Load the frontend image:
+
+```bash
+kind load docker-image \
+  securecart-frontend:0.2.0 \
+  --name securecart
+```
+
+Load the backend image:
+
+```bash
+kind load docker-image \
+  securecart-backend:0.1.0 \
+  --name securecart
+```
+
+---
+
+### Deploy Application Configuration
+
+Apply the SecureCart ConfigMap:
+
+```bash
+kubectl apply \
+  -f kubernetes/base/configmap.yaml
+```
+
+Apply the example Secret:
+
+```bash
+kubectl apply \
+  -f kubernetes/base/secrets/secret-example.yaml
+```
+
+---
+
+### Deploy the Backend
+
+Deploy the FastAPI backend:
+
+```bash
+kubectl apply \
+  -f kubernetes/base/backend-deployment.yaml
+
+kubectl apply \
+  -f kubernetes/base/backend-service.yaml
+```
+
+Wait for the backend rollout:
+
+```bash
+kubectl rollout status \
+  deployment/securecart-backend
+```
+
+Verify the backend Pods and Service:
+
+```bash
+kubectl get pods \
+  -l app=securecart,component=backend
+
+kubectl get svc securecart-backend-service
+```
+
+Verify that the Service discovered the backend Pods:
+
+```bash
+kubectl get endpointslice \
+  -l kubernetes.io/service-name=securecart-backend-service \
+  -o wide
+```
+
+---
+
+### Deploy the Frontend
+
+Deploy the SecureCart frontend:
+
+```bash
+kubectl apply \
+  -f kubernetes/base/frontend-deployment.yaml
+
 kubectl apply \
   -f kubernetes/base/frontend-service.yaml
 ```
 
-Verify:
+Wait for the frontend rollout:
 
 ```bash
-kubectl get svc
+kubectl rollout status \
+  deployment/securecart-frontend
+```
+
+Verify the frontend Pods and Service:
+
+```bash
+kubectl get pods \
+  -l app=securecart,component=frontend
+
+kubectl get svc securecart-service
+```
+
+At this point both application tiers should be running:
+
+```text
+Frontend Pods
+      |
+      v
+securecart-backend-service
+      |
+      v
+Backend Pods
 ```
 
 ---
 
-## Install the NGINX Ingress Controller
+### Install the NGINX Ingress Controller
+
+Install ingress-nginx for Kind:
 
 ```bash
 kubectl apply \
   -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
 ```
-````markdown
-## Pin the Ingress Controller to the Mapped Node
+
+---
+
+### Pin the Ingress Controller to the Mapped Node
+
+The Kind cluster maps host ports 80 and 443 to the control-plane node.
+
+Label the node:
 
 ```bash
 kubectl label node securecart-control-plane \
   ingress-ready=true \
   --overwrite
+```
 
+Configure the Ingress Controller to run on that node:
+
+```bash
 kubectl patch deployment ingress-nginx-controller \
   -n ingress-nginx \
   --type=merge \
@@ -358,35 +599,35 @@ kubectl patch deployment ingress-nginx-controller \
       }
     }
   }'
-
-  ```
+```
 
 Wait for the controller:
 
 ```bash
-kubectl rollout status deployment/ingress-nginx-controller \
+kubectl rollout status \
+  deployment/ingress-nginx-controller \
   -n ingress-nginx
 ```
 
 Verify:
-``` bash
-kubectl rollout status deployment/ingress-nginx-controller \
-  -n ingress-nginx
 
-kubectl get pods -n ingress-nginx -o wide
+```bash
+kubectl get pods \
+  -n ingress-nginx \
+  -o wide
 ```
 
 ---
 
-## Generate Local TLS Certificates
+### Generate Local TLS Certificates
 
-Create a directory:
+Create a local TLS directory:
 
 ```bash
 mkdir -p .local/tls
 ```
 
-Generate the certificate:
+Generate a self-signed certificate:
 
 ```bash
 openssl req \
@@ -403,7 +644,7 @@ openssl req \
 
 ---
 
-## Create the Kubernetes TLS Secret
+### Create the Kubernetes TLS Secret
 
 ```bash
 kubectl create secret tls securecart-tls \
@@ -419,7 +660,7 @@ kubectl get secret securecart-tls
 
 ---
 
-## Deploy the Ingress
+### Deploy the Ingress
 
 ```bash
 kubectl apply \
@@ -434,53 +675,56 @@ kubectl get ingress
 
 ---
 
-## Configure Local DNS
+### Configure Local DNS
 
-Add the following entry to your hosts file.
+Add the following entry to your hosts file:
+
+```text
+127.0.0.1 securecart.local
+```
 
 Linux/macOS:
 
-```
+```text
 /etc/hosts
 ```
 
 Windows:
 
-```
+```text
 C:\Windows\System32\drivers\etc\hosts
-```
-
-Add:
-
-```
-127.0.0.1 securecart.local
 ```
 
 ---
 
-## Verify HTTPS Access
+### Verify HTTPS Access
+
+Verify that the frontend is accessible through the Ingress Controller:
 
 ```bash
-curl --max-time 5 -I https://securecart.local
+curl --max-time 5 -I \
+  https://securecart.local
 ```
 
 Expected:
 
-```
+```text
 HTTP/2 200
 ```
 
 You may also browse to:
 
-```
+```text
 https://securecart.local
 ```
 
-Your browser will warn about the self-signed certificate. Accept the warning to continue.
+The browser may warn about the self-signed development certificate.
 
 ---
 
-## Apply the Frontend NetworkPolicy
+### Apply the Frontend NetworkPolicy
+
+Restrict frontend ingress to the NGINX Ingress Controller:
 
 ```bash
 kubectl apply \
@@ -493,79 +737,237 @@ Verify:
 kubectl get networkpolicy
 ```
 
-Expected:
+---
 
+### Apply the Backend NetworkPolicy
+
+Restrict backend ingress to SecureCart frontend workloads:
+
+```bash
+kubectl apply \
+  -f kubernetes/base/network-policies/allow-frontend-to-backend.yaml
 ```
-NAME                         POD-SELECTOR
-allow-ingress-to-frontend    app=securecart,component=frontend
+
+Verify:
+
+```bash
+kubectl get networkpolicy
+```
+
+The intended network boundaries are:
+
+```text
+ingress-nginx -> Frontend :80       ALLOWED
+Other Pods    -> Frontend :80       DENIED
+
+Frontend      -> Backend :8000      ALLOWED
+Other Pods    -> Backend :8000      DENIED
 ```
 
 ---
 
-## Validate Allowed Traffic
+### Validate Frontend Network Isolation
 
-Traffic through the Ingress Controller should still succeed.
+Traffic through the NGINX Ingress Controller should succeed:
 
 ```bash
-curl --max-time 5 -I https://securecart.local
+curl --max-time 5 -I \
+  https://securecart.local
 ```
 
 Expected:
 
-```
+```text
 HTTP/2 200
 ```
 
----
-
-## Validate Blocked Internal Traffic
-
-Launch a temporary BusyBox pod.
+Direct traffic from an unauthorized Pod to the frontend should fail:
 
 ```bash
 kubectl run network-test \
   --image=busybox:1.36 \
   --restart=Never \
-  --rm -it \
-  -- wget -T 5 -qO- http://securecart-service
+  --rm -i \
+  -- wget -T 5 -qO- \
+  http://securecart-service
 ```
 
 Expected:
 
-```
+```text
 wget: download timed out
 ```
 
-This demonstrates that:
+---
 
-- External traffic entering through the NGINX Ingress Controller is permitted.
-- Direct pod-to-service traffic is denied by the NetworkPolicy.
-- The frontend is isolated according to the principle of least privilege.
+### Validate Backend Network Isolation
+
+Verify that an unauthorized Pod cannot access the backend:
+
+```bash
+kubectl run backend-test \
+  --image=busybox:1.36 \
+  --restart=Never \
+  --rm -i \
+  -- wget -T 5 -qO- \
+  http://securecart-backend-service:8000/api/status
+```
+
+Expected:
+
+```text
+wget: download timed out
+```
+
+Now test using the SecureCart frontend workload identity:
+
+```bash
+kubectl run frontend-network-test \
+  --image=busybox:1.36 \
+  --restart=Never \
+  --labels="app=securecart,component=frontend" \
+  --rm -i \
+  -- wget -qO- \
+  http://securecart-backend-service:8000/api/status
+```
+
+Expected output resembles:
+
+```json
+{
+  "application": "SecureCart Backend",
+  "version": "0.1.0",
+  "environment": "Staging",
+  "pod": "securecart-backend-...",
+  "status": "running"
+}
+```
+
+This validates:
+
+```text
+Frontend workload -> Backend :8000   ALLOWED
+Other workload    -> Backend :8000   DENIED
+```
 
 ---
 
-## Clean Up
+### Validate End-to-End API Routing
 
-Delete the cluster when finished.
+Finally, test the complete SecureCart application path:
 
 ```bash
-kind delete cluster --name securecart
-
+curl -i \
+  https://securecart.local/api/products
 ```
+
+Expected:
+
+```text
+HTTP/2 200
+content-type: application/json
+```
+
+The response should contain the SecureCart product catalog.
+
+This validates the complete request path:
+
+```text
+Client
+  |
+  | HTTPS
+  v
+NGINX Ingress Controller
+  |
+  v
+Frontend Service
+  |
+  v
+Frontend NGINX
+  |
+  | /api/*
+  v
+Backend ClusterIP Service
+  |
+  v
+FastAPI Backend Pods
+```
+
+The backend remains internal to the Kubernetes cluster and is not exposed directly through Ingress.
+
+---
+
+### Final Deployment Verification
+
+Verify the complete application:
+
+```bash
+kubectl get deployments
+
+kubectl get pods
+
+kubectl get svc
+
+kubectl get ingress
+
+kubectl get networkpolicy
+```
+
+Both frontend and backend Deployments should be available and all application Pods should be Ready.
+
+---
+
+### Clean Up
+
+Delete the local cluster when finished:
+
+```bash
+kind delete cluster \
+  --name securecart
+```
+
 ---
 
 ## 📁 Repository Structure
 
 ```text
+
 securecart/
 ├── app/
-│   └── frontend/
+│   ├── frontend/
+│   │   ├── Dockerfile
+│   │   ├── docker-entrypoint.sh
+│   │   ├── index.html.template
+│   │   └── nginx.conf.template
+│   │
+│   └── backend/
 │       ├── Dockerfile
-│       ├── docker-entrypoint.sh
-│       └── index.html.template
+│       ├── main.py
+│       └── requirements.txt
+│
 ├── docs/
+│   ├── architecture.md
+│   ├── decisions.md
+│   ├── engineering-journal.md
+│   ├── roadmap.md
+│   └── troubleshooting.md
+│
 ├── kind/
-├── kubernetes/
+│   └── cluster.yaml
+│
+└── kubernetes/
+    └── base/
+        ├── backend-deployment.yaml
+        ├── backend-service.yaml
+        ├── configmap.yaml
+        ├── frontend-deployment.yaml
+        ├── frontend-ingress.yaml
+        ├── frontend-service.yaml
+        ├── network-policies/
+        │   ├── allow-frontend-to-backend.yaml
+        │   └── allow-ingress-to-frontend.yaml
+        └── secrets/
+            └── secret-example.yaml
 
 ```
 
@@ -585,18 +987,24 @@ Project documentation is maintained throughout development.
 
 ## 🚀 Current Focus
 
-**Current milestone:** Build the SecureCart backend API
+**Current milestone:** Add the SecureCart persistent data layer
+
+The stateless multi-tier application architecture is now operational:
+
+```text
+Frontend -> FastAPI Backend
+```
 
 Upcoming work:
 
-- Build the backend API
-- Containerize the backend
-- Deploy the backend to Kubernetes
-- Connect the frontend to the backend service
-- Secure frontend-to-backend communication
+- Deploy PostgreSQL
+- Configure Persistent Volumes
+- Configure Persistent Volume Claims
+- Connect FastAPI to PostgreSQL
+- Replace in-memory product data with database-backed data
+- Apply least-privilege network access between the backend and database
 
 **Long-term goal:** Deploy SecureCart to Amazon EKS using Terraform, Helm, and GitHub Actions.
-
 
 ---
 

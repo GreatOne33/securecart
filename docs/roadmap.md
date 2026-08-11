@@ -49,13 +49,48 @@
 
 ## Phase 2 - Application
 
-- [X] Containerize custom frontend
-- [ ] Build backend API
-- [ ] Containerize backend
-- [ ] Connect frontend to backend
+### Frontend
+
+- [x] Containerize custom frontend
+- [x] Move frontend rendering into container startup
+- [x] Configure NGINX reverse proxy for API traffic
+- [x] Build SecureCart frontend image v0.2.0
+
+### Backend API
+
+- [x] Build Python FastAPI backend
+- [x] Create health and status endpoints
+- [x] Create product API endpoints
+- [x] Implement Pydantic response models
+- [x] Implement product lookup and API error handling
+- [x] Containerize backend
+
+### Kubernetes Backend
+
+- [x] Deploy backend to Kubernetes
+- [x] Configure backend health probes
+- [x] Inject backend Pod metadata with the Downward API
+- [x] Run multiple backend replicas
+- [x] Create backend ClusterIP Service
+- [x] Verify backend service discovery and EndpointSlices
+- [x] Validate traffic distribution across backend replicas
+- [x] Restrict backend access with NetworkPolicy
+
+### Application Integration
+
+- [x] Connect frontend to backend
+- [x] Configure frontend-to-backend service discovery
+- [x] Proxy `/api/*` traffic through frontend NGINX
+- [x] Validate frontend-to-backend NetworkPolicy
+- [x] Validate end-to-end HTTPS request path
+
+### Data Layer
+
 - [ ] Deploy PostgreSQL
 - [ ] Configure Persistent Volumes
 - [ ] Configure Persistent Volume Claims
+- [ ] Connect backend to PostgreSQL
+- [ ] Replace in-memory product data with database-backed data
 
 ---
 

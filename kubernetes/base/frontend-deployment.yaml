@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: securecart-frontend:0.1.0
+          image: securecart-frontend:0.2.0
           imagePullPolicy: Never
 
           ports:
@@ -93,3 +93,9 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+
+            - name: BACKEND_HOST
+              value: "securecart-backend-service"
+
+            - name: BACKEND_PORT
+              value: "8000"
