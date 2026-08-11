@@ -24,13 +24,13 @@
 
 ### Phase 2 - Application Development 🚧
 
-✅ Containerized SecureCart frontend
-✅ Python FastAPI backend
-✅ Containerized backend API
-✅ Kubernetes backend Deployment and Service
-✅ Frontend-to-backend NetworkPolicy
-✅ NGINX API reverse proxy
-✅ End-to-end frontend-to-backend integration
+- Containerized SecureCart frontend
+- Python FastAPI backend
+- Containerized backend API
+- Kubernetes backend Deployment and Service
+- Frontend-to-backend NetworkPolicy
+- NGINX API reverse proxy
+- End-to-end frontend-to-backend integration
 
 SecureCart now runs as a multi-tier Kubernetes application.
 
