@@ -30,6 +30,11 @@ spec:
             - containerPort: 5432
               name: postgres
 
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+
           envFrom:
             - secretRef:
                 name: securecart-postgres-secret

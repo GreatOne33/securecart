@@ -23,11 +23,20 @@ spec:
     spec:
       containers:
         - name: backend
-          image: securecart-backend:0.2.0
-          imagePullPolicy: Never
-
+          image: ghcr.io/greatone33/securecart-backend:0.4.1
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
 
           env:
             - name: APP_NAME

@@ -1012,3 +1012,270 @@ The architecture currently demonstrates:
 - Separation of stateless compute from stateful storage
 
 The next architectural evolution will focus on making database provisioning reproducible through schema initialization and migrations before moving further into DevOps automation.
+
+---
+
+## Database Migration Architecture
+
+SecureCart now manages database schema changes through a version-controlled migration workflow.
+
+The migration path is:
+
+```text
+Git Repository
+      |
+      v
+Alembic Migration Files
+      |
+      v
+Kubernetes Database Migration Job
+      |
+      v
+PostgreSQL
+
+```
+
+The migration Job runs as a finite Kubernetes workload rather than as part of every backend Pod startup.
+
+It performs:
+```text
+alembic upgrade head
+        |
+        v
+python seed.py
+```
+
+The Job then terminates after successful completion.
+
+This separates deployment-time database initialization from the long-running FastAPI application workload.
+
+The migration workload uses:
+```text
+app=securecart
+component=database-migration
+```
+
+and receives explicit NetworkPolicy authorization to connect to PostgreSQL on TCP port 5432.
+
+## Container Image Supply Path
+
+SecureCart frontend and backend images are now published to GitHub Container Registry.
+
+Current application images:
+```text
+ghcr.io/greatone33/securecart-frontend:0.3.0
+ghcr.io/greatone33/securecart-backend:0.4.1
+```
+
+The application image delivery path is now:
+```text
+Application Source
+      |
+      v
+Docker Build
+      |
+      v
+GitHub Container Registry
+      |
+      v
+Kubernetes Image Pull
+      |
+      v
+Running Workload
+
+```
+
+This replaces the previous local-only development path that depended on loading images directly into Kind.
+
+The same backend image is used by:
+```text
+Backend Deployment
+Database Migration Job
+```
+
+with Kubernetes selecting the appropriate command and workload behavior.
+
+This establishes a reusable artifact boundary that can later be automated through CI/CD.
+
+## Runtime Security Architecture
+
+SecureCart applies workload-specific container security controls.
+
+#### Frontend
+```text
+Runtime User:        UID/GID 101
+Privilege Escalation: Disabled
+Linux Capabilities:   Dropped
+Root Filesystem:      Read Only
+Writable Path:        /tmp
+Container Port:       8080
+
+```
+
+The frontend uses an unprivileged NGINX runtime.
+
+A Kubernetes emptyDir is mounted at /tmp to provide only the writable runtime storage required for generated configuration, HTML content, PID files, and NGINX temporary data.
+
+The Kubernetes Service continues to expose port 80 while forwarding traffic to container port 8080.
+
+#### Backend
+```text
+Runtime User:        UID/GID 999
+Privilege Escalation: Disabled
+Linux Capabilities:   Dropped
+Root Filesystem:      Read Only
+Container Port:       8000
+
+```
+
+The FastAPI backend runs entirely as the dedicated securecart user.
+
+#### Database Migration Job
+```text
+Runtime User:        UID/GID 999
+Privilege Escalation: Disabled
+Linux Capabilities:   Dropped
+Root Filesystem:      Read Only
+
+```
+
+The migration workload uses the same hardened backend image while running Alembic and the seed process as a finite Job.
+
+#### PostgreSQL
+
+PostgreSQL uses a different security model because its initialization process requires filesystem permission management on persistent storage.
+
+The long-running PostgreSQL process executes as:
+```text
+UID 70
+GID 70
+```
+
+Persistent database data remains writable through the PostgreSQL PersistentVolumeClaim.
+
+A forced non-root startup experiment demonstrated that applying the same runtime model used by the stateless workloads prevented PostgreSQL from initializing a fresh volume.
+
+The production architecture therefore preserves the required PostgreSQL initialization behavior while allowing the database server itself to operate using its dedicated non-root runtime identity.
+
+## Current Database Trust Boundary
+
+The PostgreSQL NetworkPolicy now permits two explicitly authorized workload identities:
+```text
+Backend
+Database Migration
+```
+
+The effective database access model is:
+```text
+Backend             ─────> PostgreSQL :5432
+Database Migration  ─────> PostgreSQL :5432
+
+Frontend            ──X──> PostgreSQL :5432
+Other Workloads     ──X──> PostgreSQL :5432
+```
+
+The normal user request path remains:
+```text
+Client
+  |
+  | HTTPS
+  v
+NGINX Ingress Controller
+  |
+  v
+Frontend
+  |
+  | HTTP :8000
+  v
+FastAPI Backend
+  |
+  | PostgreSQL :5432
+  v
+PostgreSQL
+  |
+  v
+Persistent Storage
+
+```
+
+The database lifecycle path is separate:
+```text
+Database Migration Job
+        |
+        | PostgreSQL :5432
+        v
+PostgreSQL
+
+```
+
+## Current Deployment Architecture
+
+```text
+                           GitHub
+                              |
+                              v
+                 GitHub Container Registry
+                    |                   |
+                    |                   |
+                    v                   v
+              Frontend Image      Backend Image
+                    |                   |
+                    |                   +------------------+
+                    |                                      |
+                    v                                      v
+             Frontend Deployment                    Backend Deployment
+               3 replicas                            2 replicas
+                    |                                      |
+                    |                                      |
+                    +------------------+-------------------+
+                                       |
+                                       v
+                              Kubernetes Services
+                                       |
+                                       v
+                                  PostgreSQL
+                                StatefulSet 1/1
+                                       |
+                                       v
+                              PersistentVolumeClaim
+                                       |
+                                       v
+                                PersistentVolume
+
+Backend Image
+      |
+      v
+Database Migration Job
+      |
+      v
+PostgreSQL
+
+```
+
+## Current Architecture Summary - v1.0.0
+
+SecureCart now demonstrates a reproducible, hardened, registry-backed Kubernetes application architecture.
+
+The platform currently includes:
+
+- Containerized frontend and backend workloads
+- Unprivileged frontend NGINX runtime
+- Non-root FastAPI backend runtime
+- Read-only application root filesystems
+- Explicit writable runtime storage
+- Linux capability reduction
+- Privilege escalation prevention
+- Version-controlled PostgreSQL schema migrations
+- Idempotent application data seeding
+- Kubernetes database migration Job
+- Explicit database migration NetworkPolicy authorization
+- PostgreSQL persistent storage
+- StatefulSet-based database lifecycle
+- PersistentVolume and PersistentVolumeClaim management
+- Registry-hosted application artifacts
+- Kubernetes image pulls from GitHub Container Registry
+- HTTPS/TLS ingress
+- Internal service discovery
+- Least-privilege application-tier segmentation
+
+The next architectural evolution is packaging these Kubernetes resources as a reusable Helm chart before introducing CI/CD automation.

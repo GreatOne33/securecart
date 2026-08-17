@@ -377,8 +377,8 @@ Future AWS deployment may replace the local PostgreSQL StatefulSet with a manage
 ---
 
 ## ADR-010: Database Access and Network Segmentation Strategy
-
 **Introduced:** v0.9.0
+**Updated:** v1.0.0
 
 SecureCart applies least-privilege network access to the PostgreSQL data tier.
 
@@ -389,24 +389,34 @@ app=securecart
 component=database
 ```
 
-A Kubernetes NetworkPolicy selects the database Pods and permits inbound TCP traffic on port 5432 only from workloads carrying the backend identity:
+A Kubernetes NetworkPolicy selects the database Pods and permits inbound TCP traffic on port 5432 only from explicitly authorized workloads.
+
+Authorized workload identities are:
 ```text
 app=securecart
 component=backend
 ```
 
+and:
+```text
+app=securecart
+component=database-migration
+```
+
 The intended access model is:
 ```text
-Backend Pods  -> PostgreSQL :5432   Allowed
-Frontend Pods -> PostgreSQL :5432   Denied
-Other Pods    -> PostgreSQL :5432   Denied
+Backend Pods          -> PostgreSQL :5432   Allowed
+Database Migration    -> PostgreSQL :5432   Allowed
+Frontend Pods         -> PostgreSQL :5432   Denied
+Other Pods            -> PostgreSQL :5432   Denied
+
 ```
 
 This design prevents application tiers from receiving database access solely because they are running inside the same Kubernetes cluster.
 
 The frontend does not connect directly to PostgreSQL.
 
-Instead, the application request path remains:
+Instead, the normal application request path remains:
 
 ```text
 Client
@@ -425,7 +435,16 @@ PostgreSQL
 
 ```
 
-The backend is the only application tier authorized to communicate directly with the database.
+Database schema management follows a separate deployment path:
+```text
+Database Migration Job
+  |
+  v
+PostgreSQL
+
+```
+
+The backend and database migration workload are the only SecureCart workloads currently authorized to communicate directly with PostgreSQL.
 
 Database credentials are stored in a Kubernetes Secret and supplied only to workloads that require them.
 
@@ -433,19 +452,332 @@ Network authorization and database authentication therefore provide separate sec
 
 ```text
 NetworkPolicy
-    determines whether the connection is permitted
+    determines whether the network connection is permitted
 
 PostgreSQL authentication
     determines whether the client is authorized by the database
+
 ```
 
-The NetworkPolicy was validated using three workload identities:
+The policy was validated using multiple workload identities:
 ```text
-Unlabeled workload -> PostgreSQL   Denied
-Frontend workload  -> PostgreSQL   Denied
-Backend workload   -> PostgreSQL   Allowed
+Unlabeled workload        -> PostgreSQL   Denied
+Frontend workload         -> PostgreSQL   Denied
+Backend workload          -> PostgreSQL   Allowed
+Database migration        -> PostgreSQL   Allowed
+
 ```
 
 This design follows the principle of least privilege and limits lateral movement between application tiers.
 
-Future database services, workers, or administrative workloads will receive explicit access rules rather than broad access to the PostgreSQL tier.
+Future workers, administrative services, or other database clients will receive explicit access rules rather than broad PostgreSQL access.
+
+## ADR-011: Database Migration and Seed Strategy
+
+Introduced: v1.0.0
+
+SecureCart uses Alembic to manage PostgreSQL schema evolution.
+
+Database schema changes are stored as version-controlled migration files alongside the backend application.
+
+The current migration lifecycle is:
+```text
+Version-Controlled Migration
+        |
+        v
+Alembic
+        |
+        v
+PostgreSQL Schema
+
+```
+
+The initial migration creates the SecureCart products table.
+
+This design replaces manual schema creation using interactive psql commands.
+
+A fresh PostgreSQL database can be initialized using:
+```bash
+alembic upgrade head
+```
+
+SecureCart also uses a separate seed script to populate the initial product catalog.
+
+Schema migration and seed data are intentionally kept as separate concerns:
+```text
+alembic upgrade head
+        |
+        v
+Schema created
+        |
+        v
+python seed.py
+        |
+        v
+Initial catalog populated
+
+```
+
+The seed process is idempotent.
+
+If existing products are detected, the script skips them rather than inserting duplicates.
+
+This allows migration and seed operations to be safely repeated during development and deployment.
+
+The migration process was validated against completely empty temporary databases before being integrated into Kubernetes.
+
+This design ensures that the database structure and initial application data can be recreated from repository-controlled artifacts.
+
+## ADR-012: Kubernetes Database Migration Job Strategy
+
+Introduced: v1.0.0
+
+SecureCart executes database schema migrations using a dedicated Kubernetes Job.
+
+The migration Job uses the SecureCart backend container image because the image contains:
+```text
+Alembic
+alembic.ini
+migration files
+seed.py
+PostgreSQL client libraries
+```
+
+The Job performs:
+```text
+alembic upgrade head
+        |
+        v
+python seed.py
+
+```
+
+and terminates after successful completion.
+
+A Kubernetes Job was selected instead of running migrations inside every backend Pod.
+
+Running migration logic as part of backend Pod startup could result in multiple replicas attempting schema changes simultaneously during scaling or rolling updates.
+
+The dedicated Job separates finite deployment operations from the long-running application workload.
+
+The migration workload has its own Kubernetes identity:
+```text
+app=securecart
+component=database-migration
+
+```
+
+The PostgreSQL NetworkPolicy explicitly authorizes this identity to communicate with the database on TCP port 5432.
+
+This avoids disguising the migration workload as a backend Pod and preserves a clear least-privilege trust model.
+
+The migration Job was validated against both:
+
+- An already initialized SecureCart database
+- A completely empty temporary PostgreSQL database
+
+Against an existing database, migrations completed without destructive changes and the seed script skipped existing products.
+
+Against an empty database, the Job created the schema and populated the initial product catalog.
+
+This demonstrates that Kubernetes can initialize SecureCart's database without manual host-side migration commands.
+
+## ADR-013: Container Runtime Hardening Strategy
+
+Introduced: v1.0.0
+
+SecureCart applies workload-specific runtime hardening rather than enforcing identical security controls across all containers.
+
+The frontend, backend, and database migration workloads run as non-root users.
+
+Backend
+
+The backend runs as:
+```text
+uid=999(securecart)
+gid=999(securecart)
+```
+
+The backend security context enforces:
+```text
+runAsNonRoot
+no privilege escalation
+all Linux capabilities dropped
+read-only root filesystem
+```
+
+### Database Migration Job
+
+The migration Job uses the same hardened SecureCart backend runtime identity:
+```text
+uid=999(securecart)
+gid=999(securecart)
+```
+
+and the same runtime restrictions.
+
+### Frontend
+
+The frontend uses an unprivileged NGINX image and runs as:
+```text
+uid=101(nginx)
+gid=101(nginx)
+```
+
+NGINX listens on unprivileged container port 8080.
+
+The Kubernetes Service continues to expose port 80 and forwards traffic to container port 8080.
+
+The frontend root filesystem is read-only.
+
+Because NGINX requires limited writable runtime storage, Kubernetes provides an ephemeral emptyDir mounted at:
+```text
+/tmp
+```
+
+This creates the runtime boundary:
+```text
+Container root filesystem   Read Only
+/tmp                        Writable
+
+```
+
+The frontend therefore receives only the writable filesystem area required for operation.
+
+This strategy reduces runtime privileges while preserving required application behavior.
+
+## ADR-014: PostgreSQL Security Compatibility Strategy
+
+Introduced: v1.0.0
+
+PostgreSQL receives a different runtime security profile from the stateless SecureCart application containers.
+
+The PostgreSQL container initially appeared to execute with root privileges when inspected using an interactive container command.
+
+Further inspection of the actual database process through /proc/1/status showed:
+```text
+Uid: 70 70 70 70
+Gid: 70 70 70 70
+```
+
+The running PostgreSQL server therefore operates as:
+```text
+uid=70(postgres)
+gid=70(postgres)
+```
+
+A controlled experiment was performed to determine whether Kubernetes could force PostgreSQL to run as UID and GID 70 from the beginning of the container lifecycle.
+
+The test used:
+```text
+runAsUser: 70
+runAsGroup: 70
+runAsNonRoot: true
+fsGroup: 70
+```
+
+against a fresh persistent volume.
+
+The Pod failed during initialization with:
+```text
+chmod: /var/lib/postgresql/data: Operation not permitted
+```
+
+and:
+
+```text
+initdb: error: could not change permissions of directory
+"/var/lib/postgresql/data": Operation not permitted
+```
+
+The experiment demonstrated that the PostgreSQL initialization workflow requires filesystem permission changes that were prevented by forcing non-root execution from container startup.
+
+SecureCart therefore does not force PostgreSQL into the same runtime model used by the frontend and backend.
+
+Instead:
+```text
+Container initialization behavior is preserved
+        |
+        v
+PostgreSQL completes required filesystem preparation
+        |
+        v
+Database server runs as UID/GID 70
+
+```
+
+Compatible security controls are applied without preventing database initialization.
+
+This decision reflects the principle that security controls must be validated against actual workload requirements.
+
+A control that prevents required initialization or causes application unavailability is adapted rather than enforced blindly.
+
+The PostgreSQL persistent volume remains writable because database state must survive Pod recreation.
+
+Future PostgreSQL hardening may be revisited when the application moves to a managed database platform or a database image specifically designed for fully non-root initialization.
+
+## ADR-015: Container Registry and Image Versioning Strategy
+
+Introduced: v1.0.0
+
+SecureCart publishes versioned application container images to GitHub Container Registry.
+
+Current application images are:
+```text
+ghcr.io/greatone33/securecart-backend:0.4.1
+ghcr.io/greatone33/securecart-frontend:0.3.0
+```
+
+Previously, local Kubernetes development required:
+```text
+docker build
+    |
+    v
+kind load docker-image
+    |
+    v
+Kind cluster
+
+```
+
+The registry-backed workflow is now:
+```text
+docker build
+    |
+    v
+GitHub Container Registry
+    |
+    v
+Kubernetes image pull
+    |
+    v
+Application workload
+
+```
+
+Kubernetes Deployments and the database migration Job reference GHCR image locations rather than local-only image names.
+
+Registry accessibility was validated independently from the authenticated development environment by logging Docker out of GHCR and successfully pulling the published images.
+
+This demonstrates that the application artifacts are not dependent on the developer's local Docker cache.
+
+Versioned registry images establish a clear artifact boundary between:
+```text
+Application source
+        |
+        v
+Container build
+        |
+        v
+Versioned image
+        |
+        v
+Kubernetes deployment
+
+```
+
+This strategy prepares SecureCart for future CI/CD automation.
+
+GitHub Actions will eventually build, test, scan, and publish container images automatically.
+
+The AWS deployment phase may replace GHCR with Amazon ECR while preserving the same registry-based deployment model.

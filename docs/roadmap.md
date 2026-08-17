@@ -68,9 +68,11 @@
 
 ## Phase 3 - DevOps
 
-- [ ] Implement database schema initialization and migrations
-- [ ] Build production Docker images
-- [ ] Publish images to registry
+- [x] Implement Alembic database schema migrations
+- [x] Add idempotent database seed automation
+- [x] Create Kubernetes database migration Job
+- [x] Harden production-style frontend and backend container images
+- [x] Publish versioned application images to GitHub Container Registry
 - [ ] Create Helm chart
 - [ ] Configure GitHub Actions
 - [ ] Automated testing

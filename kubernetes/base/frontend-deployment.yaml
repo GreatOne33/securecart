@@ -1,5 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
+
 metadata:
   name: securecart-frontend
   labels:
@@ -22,47 +23,10 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: securecart-frontend:0.2.0
-          imagePullPolicy: Never
-
+          image: ghcr.io/greatone33/securecart-frontend:0.3.0
+          imagePullPolicy: Always
           ports:
-            - containerPort: 80
-
-          startupProbe:
-            httpGet:
-              path: /
-              port: 80
-            periodSeconds: 5
-            timeoutSeconds: 2
-            failureThreshold: 12
-
-          readinessProbe:
-            httpGet:
-              path: /
-              port: 80
-            initialDelaySeconds: 5
-            periodSeconds: 10
-            timeoutSeconds: 2
-            successThreshold: 1
-            failureThreshold: 3
-
-          livenessProbe:
-            httpGet:
-              path: /
-              port: 80
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            timeoutSeconds: 2
-            successThreshold: 1
-            failureThreshold: 3
-
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "128Mi"
-            limits:
-              cpu: "250m"
-              memory: "256Mi"
+            - containerPort: 8080
 
           env:
             - name: APP_NAME
@@ -99,3 +63,57 @@ spec:
 
             - name: BACKEND_PORT
               value: "8000"
+
+          startupProbe:
+            httpGet:
+              path: /
+              port: 8080
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+            successThreshold: 1
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+            successThreshold: 1
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          volumeMounts:
+            - name: frontend-tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: frontend-tmp
+          emptyDir: {}

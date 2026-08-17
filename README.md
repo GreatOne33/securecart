@@ -77,11 +77,10 @@ NetworkPolicies restrict communication between application tiers so that only ex
 
 Next milestone:
 
-- Implement database schema initialization and migrations
-- Build production Docker images
-- Publish images to a container registry
 - Create a Helm chart
-- Introduce automated testing and CI/CD
+- Configure GitHub Actions
+- Introduce automated testing
+- Automate Kubernetes deployments
 
 SecureCart is an ongoing engineering project designed to simulate the work of a Cloud Infrastructure / Platform Engineer. The project follows production-style engineering practices including Infrastructure as Code, Git-based workflows, documentation, containerization, application networking, persistent storage, and Kubernetes deployments.
 
@@ -124,6 +123,17 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - Least-privilege tier-to-tier communication
 - Persistent data across PostgreSQL Pod recreation
 - End-to-end HTTPS application routing
+- Alembic database schema migrations
+- Idempotent database seed automation
+- Kubernetes database migration Job
+- Version-controlled database lifecycle
+- Non-root frontend and backend containers
+- Read-only application container root filesystems
+- Dropped Linux capabilities
+- Disabled privilege escalation
+- Explicit writable runtime paths
+- Versioned frontend and backend container images
+- GitHub Container Registry image publishing
 
 ---
 
@@ -258,11 +268,36 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] Unauthorized database access validation
 - [x] Least-privilege backend database access
 
+### Database Lifecycle
+
+- [x] Alembic migration framework
+- [x] Version-controlled database schema
+- [x] Empty-database migration validation
+- [x] Idempotent product seed process
+- [x] Kubernetes database migration Job
+- [x] Migration workload database authorization
+- [x] Repeatable migration and seed execution
+
+### Container Security
+
+- [x] Non-root backend runtime
+- [x] Non-root frontend runtime
+- [x] Read-only application root filesystems
+- [x] Linux capabilities dropped
+- [x] Privilege escalation disabled
+- [x] Explicit writable frontend `/tmp`
+- [x] PostgreSQL runtime identity investigation
+- [x] PostgreSQL compatibility-preserving security configuration
+
+### Container Registry
+
+- [x] Versioned backend image
+- [x] Versioned frontend image
+- [x] GitHub Container Registry publishing
+- [x] Registry image pull validation
+
 #### Next
 
-- [ ] Implement database schema initialization and migrations
-- [ ] Build production Docker images
-- [ ] Publish images to registry
 - [ ] Create Helm chart
 - [ ] Configure GitHub Actions
 - [ ] Automated testing
@@ -358,6 +393,7 @@ Network Boundaries:
 - NGINX
 - PostgreSQL
 - Psycopg
+- Alembic
 
 ### Containers and Orchestration
 
@@ -390,6 +426,7 @@ Network Boundaries:
 - PersistentVolumeClaims
 - StorageClasses
 - Headless Services
+- Jobs
 
 ### Infrastructure as Code
 
@@ -397,9 +434,11 @@ Network Boundaries:
 
 ### DevOps
 
+- GitHub Container Registry
+- Versioned container images
+- Git-based workflows
 - GitHub Actions *(planned)*
 - CI/CD automation *(planned)*
-- Git-based workflows
 
 ### Version Control
 
@@ -481,52 +520,49 @@ securecart-worker          Ready    <none>
 
 ---
 
-### Build the Application Images
+### Application Images
 
-Build the SecureCart frontend:
+SecureCart uses versioned container images published to GitHub Container Registry.
 
-```bash
-docker build \
-  -t securecart-frontend:0.2.0 \
-  app/frontend
+Frontend:
+
+```text
+ghcr.io/greatone33/securecart-frontend:0.3.0
 ```
 
-Build the SecureCart backend:
+Backend:
 
-```bash
-docker build \
-  -t securecart-backend:0.2.0 \
-  app/backend
+```text
+ghcr.io/greatone33/securecart-backend:0.4.1
 ```
 
-Verify both images:
+The Kubernetes Deployments and database migration Job pull these images directly from GHCR.
+
+Verify the published images:
 
 ```bash
-docker images | grep securecart
+docker pull \
+  ghcr.io/greatone33/securecart-frontend:0.3.0
+
+docker pull \
+  ghcr.io/greatone33/securecart-backend:0.4.1
 ```
 
----
+The registry-backed deployment model replaces the previous local Kind image-loading workflow.
 
-### Load the Images into Kind
+```text
+Application Source
+      |
+      v
+Container Build
+      |
+      v
+GitHub Container Registry
+      |
+      v
+Kubernetes Image Pull
 
-Kind nodes use their own container runtime, so locally built images must be loaded into the cluster.
-
-Load the frontend image:
-
-```bash
-kind load docker-image \
-  securecart-frontend:0.2.0 \
-  --name securecart
 ```
-
-Load the backend image:
-
-```bash
-kind load docker-image \
-  securecart-backend:0.2.0 \
-  --name securecart
-```
-
 ---
 
 ### Deploy Application Configuration
@@ -602,50 +638,68 @@ Expected:
 /var/run/postgresql:5432 - accepting connections
 ```
 
-### Initialize the Development Database
+### Initialize the Database
 
-Database schema migrations have not yet been automated.
+SecureCart manages its PostgreSQL schema through version-controlled Alembic migrations and populates initial application data through an idempotent seed process.
 
-For the current development release, initialize the product table manually:
+Run the Kubernetes database migration Job:
+
+```bash
+kubectl apply \
+  -f kubernetes/base/database-migration-job.yaml
+```
+
+Wait for the Job to complete:
+
+```bash
+kubectl wait \
+  --for=condition=complete \
+  job/securecart-db-migration \
+  --timeout=120s
+```
+
+Review the migration and seed output:
+
+```bash
+kubectl logs \
+  job/securecart-db-migration
+```
+
+Expected output on an already initialized database resembles:
+
+```text
+Skipping existing product: SecureCart T-Shirt
+Skipping existing product: SecureCart Hoodie
+Skipping existing product: SecureCart Sticker Pack
+```
+
+Verify the resulting database schema:
 
 ```bash
 kubectl exec securecart-postgres-0 -- \
   psql \
   -U securecart_app \
   -d securecart \
-  -c "CREATE TABLE products (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        price NUMERIC(10,2) NOT NULL,
-        in_stock BOOLEAN NOT NULL DEFAULT true
-      );"
+  -c "\dt"
 ```
 
-Seed the development product catalog:
+The database should contain the Alembic version table and SecureCart product table.
 
-```bash
-kubectl exec securecart-postgres-0 -- \
-  psql \
-  -U securecart_app \
-  -d securecart \
-  -c "INSERT INTO products (name, price, in_stock)
-      VALUES
-      ('SecureCart T-Shirt', 24.99, true),
-      ('SecureCart Hoodie', 49.99, true),
-      ('SecureCart Sticker Pack', 6.99, false);"
+The migration Job provides a repeatable deployment-time database lifecycle:
+
+```text
+Alembic Migration
+       |
+       v
+PostgreSQL Schema
+       |
+       v
+Idempotent Seed
+       |
+       v
+Application Data
+
 ```
-
-Verify the data:
-
-```bash
-kubectl exec securecart-postgres-0 -- \
-  psql \
-  -U securecart_app \
-  -d securecart \
-  -c "SELECT * FROM products ORDER BY id;"
-```
-
-> Manual schema initialization is temporary. Automated database initialization and migrations are planned for Phase 3.
 
 ---
 
@@ -689,7 +743,7 @@ kubectl get endpointslice \
 
 ### Apply the PostgreSQL NetworkPolicy
 
-Restrict PostgreSQL ingress to SecureCart backend workloads:
+Restrict PostgreSQL ingress to explicitly authorized SecureCart database clients:
 
 ```bash
 kubectl apply \
@@ -703,15 +757,16 @@ kubectl get networkpolicy
 
 The complete application trust boundaries are:
 ```text
-ingress-nginx -> Frontend :80       ALLOWED
-Other Pods    -> Frontend :80       DENIED
+ingress-nginx -> Frontend :80            ALLOWED
+Other Pods    -> Frontend :80            DENIED
 
-Frontend      -> Backend :8000      ALLOWED
-Other Pods    -> Backend :8000      DENIED
+Frontend      -> Backend :8000           ALLOWED
+Other Pods    -> Backend :8000           DENIED
 
-Backend       -> PostgreSQL :5432   ALLOWED
-Frontend      -> PostgreSQL :5432   DENIED
-Other Pods    -> PostgreSQL :5432   DENIED
+Backend       -> PostgreSQL :5432        ALLOWED
+Migration Job -> PostgreSQL :5432        ALLOWED
+Frontend      -> PostgreSQL :5432        DENIED
+Other Pods    -> PostgreSQL :5432        DENIED
 
 ```
 
@@ -1022,9 +1077,10 @@ securecart-postgres:5432 - accepting connections
 
 This validates the database trust boundary:
 ```text
-Backend workload  -> PostgreSQL :5432   ALLOWED
-Frontend workload -> PostgreSQL :5432   DENIED
-Other workload    -> PostgreSQL :5432   DENIED
+Backend ------------> PostgreSQL :5432   ALLOWED
+Migration Job ------> PostgreSQL :5432   ALLOWED
+Frontend -----------> PostgreSQL :5432   DENIED
+Other workloads ----> PostgreSQL :5432   DENIED
 ```
 
 ---
@@ -1258,9 +1314,12 @@ securecart/
 │   │   └── nginx.conf.template
 │   │
 │   └── backend/
+│       ├── migrations/
+│       ├── alembic.ini
 │       ├── Dockerfile
 │       ├── main.py
-│       └── requirements.txt
+│       ├── requirements.txt
+│       └── seed.py
 │
 ├── docs/
 │   ├── architecture.md
@@ -1277,6 +1336,7 @@ securecart/
         ├── backend-deployment.yaml
         ├── backend-service.yaml
         ├── configmap.yaml
+        ├── database-migration-job.yaml
         ├── frontend-deployment.yaml
         ├── frontend-ingress.yaml
         ├── frontend-service.yaml
@@ -1307,31 +1367,47 @@ Project documentation is maintained throughout development.
 
 ## 🚀 Current Focus
 
-**Current milestone:** Begin DevOps automation
+**Current milestone:** Helm packaging and deployment standardization
 
-The SecureCart application architecture is now operational with persistent application data:
+SecureCart has entered the DevOps engineering phase.
+
+The application now includes:
+
+- Version-controlled PostgreSQL schema migrations with Alembic
+- Idempotent database seed automation
+- Kubernetes database migration Job
+- Persistent PostgreSQL storage
+- Least-privilege application NetworkPolicies
+- Hardened non-root frontend and backend containers
+- Read-only application root filesystems
+- Dropped Linux capabilities and disabled privilege escalation
+- Versioned application container images
+- GitHub Container Registry publishing
+- End-to-end HTTPS application validation
+
+The current deployment lifecycle is:
 
 ```text
-Frontend -> FastAPI Backend -> PostgreSQL -> Persistent Storage
+Application Source
+       |
+       v
+Container Images
+       |
+       v
+GitHub Container Registry
+       |
+       v
+Kubernetes Workloads
+       |
+       +------> Database Migration Job
+       |               |
+       |               v
+       |           PostgreSQL
+       |
+       +------> Frontend / Backend
 ```
 
-Phase 2 established:
-
-- Containerized frontend and backend application tiers
-- Kubernetes service discovery
-- End-to-end HTTPS application routing
-- PostgreSQL persistent storage
-- Database-backed product data
-- Stateful workload management
-- PersistentVolume and PersistentVolumeClaim storage
-- Least-privilege NetworkPolicies between application tiers
-- Application persistence across database Pod recreation
-
 Upcoming work:
-
-- Implement database schema initialization and migrations
-- Build production Docker images
-- Publish images to a container registry
 - Create a Helm chart
 - Configure GitHub Actions
 - Introduce automated testing

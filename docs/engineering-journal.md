@@ -1463,3 +1463,894 @@ Most importantly, the same frontend and backend containers can be tested indepen
 - Create the next SecureCart release.
 - Begin the next application-development milestone.
 
+## Persistent Data Layer and PostgreSQL Integration
+
+SecureCart was extended from a stateless multi-tier application into a stateful application backed by PostgreSQL.
+
+The goal of this milestone was to introduce persistent application data while maintaining the existing least-privilege architecture between application tiers.
+
+### PostgreSQL Service
+
+A dedicated PostgreSQL service was introduced:
+
+```text
+securecart-postgres
+```
+
+The service uses a headless ClusterIP configuration:
+
+```yaml
+clusterIP: None
+```
+
+PostgreSQL listens internally on TCP port `5432`.
+
+The database is not exposed through the Ingress Controller and is intended to be reachable only by authorized workloads inside the Kubernetes cluster.
+
+### PostgreSQL Credentials
+
+Database configuration was stored in a Kubernetes Secret containing:
+
+```text
+POSTGRES_DB
+POSTGRES_USER
+POSTGRES_PASSWORD
+```
+
+The Secret is referenced by the PostgreSQL workload rather than embedding database credentials directly into the StatefulSet manifest.
+
+The backend also consumes the required database values from the Secret when establishing PostgreSQL connections.
+
+### PostgreSQL StatefulSet
+
+PostgreSQL was deployed using a StatefulSet rather than a standard Deployment.
+
+The database currently runs as a single replica:
+
+```text
+securecart-postgres-0
+```
+
+A StatefulSet was selected because PostgreSQL requires persistent storage and stable workload identity.
+
+The PostgreSQL container also uses startup, readiness, and liveness probes based on `pg_isready`.
+
+### Persistent Storage
+
+The StatefulSet uses a `volumeClaimTemplate` to request persistent storage for PostgreSQL.
+
+The Kind cluster provides the default `standard` StorageClass using the local-path provisioner.
+
+The resulting storage chain was:
+
+```text
+StatefulSet
+    ↓
+securecart-postgres-0
+    ↓
+PersistentVolumeClaim
+    ↓
+PersistentVolume
+    ↓
+Local persistent storage
+```
+
+The generated PVC:
+
+```text
+postgres-data-securecart-postgres-0
+```
+
+was dynamically bound to a 1 GiB PersistentVolume using `ReadWriteOnce`.
+
+### Persistence Validation
+
+Persistent storage was tested before integrating the database with the application.
+
+A temporary table was created:
+
+```sql
+CREATE TABLE persistence_test (
+    id SERIAL PRIMARY KEY,
+    message TEXT NOT NULL
+);
+```
+
+A test record was inserted:
+
+```text
+SecureCart persistent storage works
+```
+
+The PostgreSQL Pod was then deliberately deleted:
+
+```bash
+kubectl delete pod securecart-postgres-0
+```
+
+The StatefulSet automatically recreated:
+
+```text
+securecart-postgres-0
+```
+
+The existing PVC remained bound to the same PersistentVolume.
+
+After PostgreSQL restarted, the test record was queried successfully.
+
+This demonstrated that the lifecycle of the application Pod is independent from the lifecycle of its persistent data.
+
+### Backend PostgreSQL Connectivity
+
+The SecureCart backend was extended with the Psycopg PostgreSQL driver.
+
+The backend image was updated to:
+
+```text
+securecart-backend:0.2.0
+```
+
+Database connection information is supplied to the backend through environment variables:
+
+```text
+DB_HOST
+DB_PORT
+DB_NAME
+DB_USER
+DB_PASSWORD
+```
+
+The Kubernetes backend Deployment uses:
+
+```text
+DB_HOST=securecart-postgres
+DB_PORT=5432
+```
+
+while database credentials are retrieved from the PostgreSQL Secret.
+
+A database connectivity endpoint was added:
+
+```text
+GET /api/db-status
+```
+
+Successful validation returned:
+
+```json
+{
+  "database": "PostgreSQL",
+  "status": "connected",
+  "test_query": 1
+}
+```
+
+This confirmed successful communication from FastAPI to PostgreSQL through Kubernetes service discovery.
+
+### Database-Backed Product Catalog
+
+The SecureCart product catalog was migrated from an in-memory Python data structure into PostgreSQL.
+
+A `products` table was created with:
+
+```sql
+CREATE TABLE products (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    price NUMERIC(10,2) NOT NULL,
+    in_stock BOOLEAN NOT NULL DEFAULT true
+);
+```
+
+The initial SecureCart catalog was inserted into PostgreSQL:
+
+```text
+SecureCart T-Shirt
+SecureCart Hoodie
+SecureCart Sticker Pack
+```
+
+The FastAPI product endpoints were then changed to query PostgreSQL using Psycopg.
+
+The existing external API contract remained unchanged:
+
+```text
+GET /api/products
+GET /api/products/{product_id}
+```
+
+Successful HTTPS requests confirmed that product data was now being retrieved from PostgreSQL.
+
+### Application Persistence Validation
+
+After migrating the product catalog to PostgreSQL, the PostgreSQL Pod was deliberately deleted again:
+
+```bash
+kubectl delete pod securecart-postgres-0
+```
+
+The StatefulSet recreated the database Pod and reattached its existing persistent storage.
+
+The application was then tested through its normal external request path:
+
+```bash
+curl -i https://securecart.local/api/products
+```
+
+The request returned:
+
+```text
+HTTP/2 200
+```
+
+and all three products remained available.
+
+This demonstrated application-level persistence rather than persistence of only an isolated test record.
+
+### Database Network Segmentation
+
+A NetworkPolicy was introduced to isolate the PostgreSQL workload.
+
+The policy selects:
+
+```text
+app=securecart
+component=database
+```
+
+and permits TCP port `5432` only from Pods carrying:
+
+```text
+app=securecart
+component=backend
+```
+
+The resulting trust boundary is:
+
+```text
+Backend   ─────> PostgreSQL :5432
+Frontend  ──X──> PostgreSQL :5432
+Other Pod ──X──> PostgreSQL :5432
+```
+
+NetworkPolicy behavior was explicitly validated.
+
+An unlabeled test Pod received no response from PostgreSQL.
+
+A Pod carrying the frontend identity also received no response.
+
+A Pod carrying the backend identity successfully returned:
+
+```text
+securecart-postgres:5432 - accepting connections
+```
+
+The complete application remained functional after database isolation:
+
+```bash
+curl --max-time 10 -i \
+  https://securecart.local/api/products
+```
+
+returned:
+
+```text
+HTTP/2 200
+```
+
+with the PostgreSQL-backed product catalog.
+
+### Current Application Trust Boundaries
+
+SecureCart now enforces least-privilege communication between application tiers:
+
+```text
+Ingress Controller
+        │
+        │ allowed
+        ▼
+Frontend
+        │
+        │ allowed
+        ▼
+Backend
+        │
+        │ allowed :5432
+        ▼
+PostgreSQL
+        │
+        ▼
+Persistent Storage
+```
+
+Unauthorized lateral communication between application tiers is restricted using Kubernetes NetworkPolicies.
+
+The database remains an internal cluster service and is not directly exposed through the application Ingress.
+
+### Local Kind Networking Observation
+
+During development, the local Kind environment again demonstrated inconsistent NetworkPolicy reconciliation.
+
+After backend database connectivity initially stalled, restarting the `kindnet` DaemonSet restored the expected network path:
+
+```bash
+kubectl rollout restart daemonset/kindnet -n kube-system
+
+kubectl rollout status daemonset/kindnet \
+  -n kube-system \
+  --timeout=180s
+```
+
+After reconciliation, FastAPI successfully connected to PostgreSQL and subsequent NetworkPolicy validation behaved as expected.
+
+This remains documented as a local Kind networking behavior rather than an application configuration requirement.
+
+### Lessons Learned
+
+- Stateful workloads have different lifecycle requirements from stateless application replicas.
+- StatefulSets provide stable workload identity appropriate for persistent services such as PostgreSQL.
+- PersistentVolumeClaims separate application storage lifecycle from Pod lifecycle.
+- Dynamic provisioning allows Kubernetes to satisfy storage requests through a StorageClass.
+- Deleting a database Pod does not necessarily delete its persistent application data.
+- Kubernetes Services provide stable database discovery even when the underlying database Pod is recreated.
+- Application data can move from in-memory state to persistent storage without changing the external API contract.
+- Database credentials should be supplied through Secrets rather than embedded directly in application manifests.
+- NetworkPolicies can enforce tier-to-tier least privilege inside the Kubernetes cluster.
+- Internal network placement alone should not be treated as an authorization boundary.
+- Persistence should be validated at both the storage layer and through the application's normal request path.
+
+---
+
+# Engineering Journal - v1.0.0
+
+## Reproducible Database Lifecycle, Container Hardening, and Image Registry
+
+Following the introduction of the PostgreSQL persistent data layer in v0.9.0, SecureCart's next development milestone focused on making the application more reproducible and production-oriented.
+
+The primary objectives were:
+
+- Introduce version-controlled database schema migrations
+- Make initial application data reproducible
+- Execute database migrations as a Kubernetes workload
+- Harden application containers
+- Validate security controls against workload requirements
+- Version application container images
+- Publish application artifacts to a container registry
+
+This work moved SecureCart beyond simply maintaining persistent application data and established a repeatable lifecycle for application schema, runtime security, and container artifacts.
+
+## Database Schema Management with Alembic
+
+The PostgreSQL schema originally existed as application state but did not yet have a version-controlled migration lifecycle.
+
+Alembic was introduced to manage database schema changes.
+
+The backend now contains:
+
+```text
+alembic.ini
+migrations/
+└── versions/
+    └── bc2cf364d1fc_create_products_table.py
+```
+
+The initial migration creates the products table:
+
+```text
+products
+├── id
+├── name
+├── price
+└── in_stock
+```
+
+The migration history was validated using:
+```bash
+alembic history
+```
+
+with the migration registered as the current head revision.
+
+### Fresh Database Migration Validation
+
+A temporary PostgreSQL database was created to verify that the migration could construct the schema from an empty database.
+
+Before migration, querying the public schema returned no tables.
+
+The migration was then executed:
+```bash
+alembic upgrade head
+```
+
+Afterward, the database contained:
+```bash
+alembic_version
+products
+```
+
+This demonstrated that the SecureCart database schema could be recreated from version-controlled migration files rather than depending on an existing database.
+
+The temporary validation database was removed after testing.
+
+### Idempotent Database Seeding
+
+A backend seed script was introduced to populate the initial SecureCart product catalog.
+
+The seed data contains:
+```text
+SecureCart T-Shirt
+SecureCart Hoodie
+SecureCart Sticker Pack
+```
+
+The seeding process was intentionally designed to be idempotent.
+
+When executed against an empty migrated database, the script inserted the initial products.
+
+A subsequent execution returned:
+```text
+Skipping existing product: SecureCart T-Shirt
+Skipping existing product: SecureCart Hoodie
+Skipping existing product: SecureCart Sticker Pack
+```
+
+This prevents repeated deployment operations from creating duplicate catalog entries.
+
+### Complete Database Rebuild Validation
+
+Schema migration and data seeding were then tested together against another empty PostgreSQL database.
+
+The validation sequence was:
+```text
+Empty Database
+      |
+      v
+Alembic Migration
+      |
+      v
+Products Schema
+      |
+      v
+Seed Script
+      |
+      v
+Initial Product Catalog
+
+```
+
+After migration and seeding, querying the products table returned:
+```text
+1 | SecureCart T-Shirt      | 24.99 | true
+2 | SecureCart Hoodie       | 49.99 | true
+3 | SecureCart Sticker Pack |  6.99 | false
+```
+
+Running the seed script again skipped all existing products.
+
+This demonstrated that both the SecureCart schema and initial application data could be reconstructed from repository-controlled artifacts.
+
+### Kubernetes Database Migration Job
+
+Database migration was moved from a manually executed development operation into Kubernetes.
+
+A Kubernetes Job was created:
+```text
+securecart-db-migration
+```
+
+The Job uses the SecureCart backend image because that image contains:
+```text
+Alembic
+alembic.ini
+migration files
+seed.py
+PostgreSQL client dependencies
+```
+
+The migration workload performs the database initialization process and terminates after successful completion.
+
+A successful execution reported:
+```text
+STATUS: Complete
+COMPLETIONS: 1/1
+```
+
+The Job logs confirmed that the existing catalog was detected:
+```text
+Skipping existing product: SecureCart T-Shirt
+Skipping existing product: SecureCart Hoodie
+Skipping existing product: SecureCart Sticker Pack
+```
+
+Migration Job Fresh-Database Test
+
+The Kubernetes migration workflow was also validated against a completely empty temporary PostgreSQL database.
+
+Before the Job ran:
+```text
+Did not find any relations.
+```
+
+After the Job completed, the database contained:
+```text
+alembic_version
+products
+```
+
+and the expected product catalog.
+
+This proved that database initialization did not depend on manually prepared application state.
+
+The temporary Job and database were removed after validation.
+
+### Database Network Authorization for Migration Workloads
+
+Introducing the migration Job created a new database client identity.
+
+The existing PostgreSQL NetworkPolicy previously permitted database traffic from the backend application workload.
+
+The policy was extended so PostgreSQL can also receive connections from:
+```text
+app=securecart
+component=database-migration
+```
+
+The resulting database trust boundary became:
+```text
+Backend             ─────> PostgreSQL :5432
+Database Migration  ─────> PostgreSQL :5432
+Frontend            ──X──> PostgreSQL :5432
+Other Workloads     ──X──> PostgreSQL :5432
+```
+
+This preserves least-privilege database access while allowing the migration lifecycle to operate.
+
+The migration Job successfully completed after the NetworkPolicy change.
+
+During local validation, the Kind environment again required kindnet reconciliation after NetworkPolicy changes.
+
+This remains treated as a local Kind networking behavior rather than a SecureCart application requirement.
+
+### Backend Container Hardening
+
+The SecureCart backend image was hardened to avoid running the application as root.
+
+A dedicated container user was introduced:
+
+```text
+securecart
+```
+
+with runtime identity:
+```text
+uid=999(securecart)
+gid=999(securecart)
+```
+
+Application files required by the backend were copied with ownership assigned to the SecureCart user.
+
+The backend image was rebuilt and validated locally before Kubernetes deployment.
+
+Inside the running Kubernetes backend Pods:
+```bash
+id
+```
+
+confirmed:
+```text
+uid=999(securecart)
+gid=999(securecart)
+```
+
+The Kubernetes container security context was also hardened with:
+```text
+runAsNonRoot: true
+runAsUser: 999
+runAsGroup: 999
+allowPrivilegeEscalation: false
+readOnlyRootFilesystem: true
+capabilities:
+  drop:
+    - ALL
+
+```
+
+Attempts to create files inside the application filesystem failed with:
+```text
+Read-only file system
+```
+
+The backend therefore runs without root privileges, without Linux capabilities, without privilege escalation, and without write access to its container root filesystem.
+
+The database migration Job uses the same hardened backend runtime identity.
+
+### Frontend Container Hardening
+
+The frontend was migrated from the standard root-oriented NGINX container configuration to an unprivileged NGINX runtime.
+
+The frontend now runs as:
+```text
+uid=101(nginx)
+gid=101(nginx)
+```
+
+NGINX listens internally on:
+```text
+8080
+```
+
+instead of privileged port 80.
+
+The Kubernetes Service continues to expose the frontend internally on port 80 while forwarding requests to container port 8080.
+
+This allows the external application architecture to remain unchanged while the container itself runs without root privileges.
+
+The frontend security context now enforces:
+```text
+runAsNonRoot: true
+runAsUser: 101
+runAsGroup: 101
+allowPrivilegeEscalation: false
+readOnlyRootFilesystem: true
+capabilities:
+  drop:
+    - ALL
+
+```
+
+### Writable Runtime Directory
+
+NGINX still requires limited writable runtime storage.
+
+Rather than making the container filesystem writable, an emptyDir volume is mounted at:
+
+```text
+/tmp
+```
+
+The security boundary is therefore:
+```text
+Container Root Filesystem    Read Only
+/etc                         Read Only
+Application Files            Read Only
+/tmp                         Writable ephemeral storage
+
+```
+
+This behavior was explicitly tested.
+
+Attempting:
+```bash
+touch /etc/test-file
+```
+
+returned:
+```text
+Read-only file system
+```
+
+while:
+```bash
+touch /tmp/test-file
+```
+
+succeeded.
+
+This provides the frontend only the writable filesystem area required for runtime operation.
+
+### PostgreSQL Runtime Security Investigation
+
+The PostgreSQL workload required different security treatment from the frontend and backend.
+
+Initial inspection appeared to show:
+```text
+uid=0(root)
+gid=0(root)
+```
+
+when executing commands inside the container.
+
+However, inspecting the actual PostgreSQL server process through /proc/1/status showed:
+```text
+Uid: 70 70 70 70
+Gid: 70 70 70 70
+```
+
+The PostgreSQL server itself therefore runs as:
+```text
+uid=70(postgres)
+gid=70(postgres)
+```
+
+The persistent database files were also owned by the PostgreSQL runtime user.
+
+### Forced Non-Root Experiment
+
+A separate temporary PostgreSQL workload was created to determine whether Kubernetes could force the entire container lifecycle to run as UID and GID 70.
+
+The test security context included:
+```text
+runAsUser: 70
+runAsGroup: 70
+runAsNonRoot: true
+fsGroup: 70
+```
+
+The Pod failed during database initialization.
+
+PostgreSQL reported:
+```text
+chmod: /var/lib/postgresql/data: Operation not permitted
+```
+
+followed by:
+```text
+initdb: error: could not change permissions of directory "/var/lib/postgresql/data": Operation not permitted
+```
+
+The experiment demonstrated that forcing non-root execution at the Kubernetes level interfered with initialization behavior required by the PostgreSQL container image and persistent volume.
+
+The production SecureCart PostgreSQL configuration was therefore not forced into the same security model as the stateless application containers.
+
+Instead, the image is allowed to perform its required initialization behavior and PostgreSQL subsequently runs as its dedicated UID/GID 70 runtime identity.
+
+This was an intentional engineering decision based on observed workload behavior rather than applying a security control that would prevent the database from functioning.
+
+### Application Validation After Hardening
+
+After frontend, backend, migration, PostgreSQL, and NetworkPolicy changes, the complete application path was tested again.
+
+The product API returned:
+```text
+HTTP/2 200
+```
+
+with all three PostgreSQL-backed products.
+
+The database status endpoint returned:
+```JSON
+{
+  "database": "PostgreSQL",
+  "status": "connected",
+  "test_query": 1
+}
+```
+
+Direct PostgreSQL validation also confirmed that the product catalog remained intact.
+
+This demonstrated that the runtime hardening changes did not break application functionality or persistent data access.
+
+Versioned Production-Style Container Images
+
+The hardened application containers were built as versioned images.
+
+Backend:
+```text
+securecart-backend:0.4.1
+```
+
+Frontend:
+```text
+securecart-frontend:0.3.0
+```
+
+The backend image was validated to run as:
+```text
+uid=999(securecart)
+gid=999(securecart)
+```
+
+The frontend image was validated to run as:
+```text
+uid=101(nginx)
+gid=101(nginx)
+```
+
+Both images were tested before registry publication.
+
+### GitHub Container Registry
+
+SecureCart application images were published to GitHub Container Registry.
+
+The published image locations are:
+```text
+ghcr.io/greatone33/securecart-backend:0.4.1
+ghcr.io/greatone33/securecart-frontend:0.3.0
+```
+
+The backend image was published with digest:
+```text
+sha256:4bd39ce74d6d6de04d9b70c2695a330c4d6838126fb059e428a5391e9be22215
+```
+
+The frontend image was published with digest:
+```text
+sha256:b8454901e21266782aa47d0229c3e8e5520c97ca7ab7a59055d966585626eef8
+```
+
+Registry accessibility was independently validated by logging Docker out of GHCR and pulling both images without registry authentication.
+
+Both pulls succeeded.
+
+This confirmed that the published SecureCart images were accessible from the registry independently of the local build cache and authenticated development session.
+
+### Current Runtime Security Model
+
+The resulting application runtime identities are:
+```text
+Frontend
+  UID/GID 101
+  Non-root
+  Read-only root filesystem
+  Linux capabilities dropped
+  Privilege escalation disabled
+  Writable /tmp through emptyDir
+
+Backend
+  UID/GID 999
+  Non-root
+  Read-only root filesystem
+  Linux capabilities dropped
+  Privilege escalation disabled
+
+Database Migration
+  UID/GID 999
+  Non-root
+  Read-only root filesystem
+  Linux capabilities dropped
+  Privilege escalation disabled
+
+PostgreSQL
+  Initialization behavior preserved
+  PostgreSQL server runs as UID/GID 70
+  Persistent storage remains writable by PostgreSQL
+
+```
+
+### Current Database Lifecycle
+
+SecureCart's database lifecycle is now:
+
+```text
+Version-Controlled Migration
+            |
+            v
+Kubernetes Migration Job
+            |
+            v
+       PostgreSQL
+            |
+            v
+     Products Schema
+            |
+            v
+      Seed Catalog
+            |
+            v
+     FastAPI Backend
+
+```
+
+Schema state is no longer dependent on manually creating database objects.
+
+Database structure can be recreated from repository-controlled migration files and initial application data can be populated through the idempotent seed process.
+
+### Lessons Learned
+- Persistent data alone is not sufficient for reproducible database deployment; schema evolution must also be version controlled.
+- Alembic provides a repeatable migration history for PostgreSQL schema changes.
+- Database migrations should be validated against an empty database rather than only an existing development database.
+- Seed operations should be idempotent so deployment operations can safely be repeated.
+- Kubernetes Jobs are appropriate for finite deployment operations such as schema migrations.
+- A migration workload should receive explicit database network authorization rather than inheriting broad database access.
+- Application containers do not need to run as root when their runtime requirements are designed appropriately.
+- Dropping Linux capabilities and disabling privilege escalation reduce the permissions available to compromised application processes.
+- A read-only root filesystem limits an application's ability to modify its container image at runtime.
+- Writable runtime paths should be explicitly provided rather than making the entire filesystem writable.
+- Security controls must be validated against actual workload behavior.
+- Forcing PostgreSQL to run non-root for its entire initialization lifecycle broke required filesystem initialization operations.
+- Container startup identity and the identity of the long-running application process are not necessarily the same.
+- Security engineering sometimes requires preserving necessary workload behavior rather than enforcing a control that makes the application unavailable.
+- Runtime hardening should be followed by complete application-path testing.
+- Versioned registry images create a deployable artifact boundary between application builds and Kubernetes deployments.
+- Registry artifacts should be validated independently of local authentication and local image state.
+- Local Kind NetworkPolicy reconciliation behavior should not be confused with an application architecture requirement.
