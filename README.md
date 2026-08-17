@@ -362,6 +362,7 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 
 ```
 
+```text
 Configuration:
   ConfigMap ----------> Frontend / Backend
   Downward API -------> Pod Runtime Metadata
@@ -376,6 +377,7 @@ Network Boundaries:
   Frontend -----------> PostgreSQL :5432   DENIED
   Other workloads ---> PostgreSQL :5432   DENIED
 
+```
 ---
 
 ## 🛠️ Technology Stack
