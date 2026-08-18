@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: securecart-config
+
+data:
+  APP_NAME: {{ .Values.global.appName | quote }}
+  ENVIRONMENT: {{ .Values.global.environment | quote }}
+  VERSION: {{ .Chart.AppVersion | quote }}
+  COMPANY: {{ .Values.global.company | quote }}

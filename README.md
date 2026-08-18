@@ -77,10 +77,9 @@ NetworkPolicies restrict communication between application tiers so that only ex
 
 Next milestone:
 
-- Create a Helm chart
 - Configure GitHub Actions
 - Introduce automated testing
-- Automate Kubernetes deployments
+- Automate Helm-based Kubernetes deployments
 
 SecureCart is an ongoing engineering project designed to simulate the work of a Cloud Infrastructure / Platform Engineer. The project follows production-style engineering practices including Infrastructure as Code, Git-based workflows, documentation, containerization, application networking, persistent storage, and Kubernetes deployments.
 
@@ -296,12 +295,23 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] GitHub Container Registry publishing
 - [x] Registry image pull validation
 
+### Helm and Release Management
+
+- [x] Package SecureCart as a Helm chart
+- [x] Parameterize deployment configuration with `values.yaml`
+- [x] Validate chart with `helm lint`
+- [x] Validate rendered manifests with `helm template`
+- [x] Validate rendered resources against the Kubernetes API
+- [x] Adopt existing Kubernetes resources into a Helm release
+- [x] Validate Helm upgrade behavior
+- [x] Validate Helm revision history
+- [x] Validate Helm rollback behavior
+
 #### Next
 
-- [ ] Create Helm chart
 - [ ] Configure GitHub Actions
 - [ ] Automated testing
-- [ ] Automated Kubernetes deployments
+- [ ] Automated Helm deployments
 
 ---
 
@@ -449,911 +459,607 @@ Network Boundaries:
 
 ---
 
-## ▶️ Deploy Locally
+## 🚀 Deploy Locally
 
-The following steps deploy the complete SecureCart application to a local Kind cluster.
+SecureCart can be deployed to a local Kubernetes cluster using Helm.
 
-The deployment includes:
+The Helm chart is the preferred deployment interface and packages the frontend, backend, PostgreSQL database, database migration Job, Services, Ingress, ConfigMap, and NetworkPolicies into a single release.
 
-- SecureCart frontend
-- FastAPI backend
-- Kubernetes Services
-- NGINX Ingress Controller
-- HTTPS/TLS
-- Frontend and backend NetworkPolicies
+The original Kubernetes manifests under `kubernetes/base/` remain available as the foundational Kubernetes implementation and architecture reference.
 
 ### Prerequisites
 
-Ensure the following tools are installed:
+The local environment requires:
 
 - Docker
 - Kind
 - kubectl
-- Git
-- OpenSSL
-- curl
+- Helm
+- NGINX Ingress Controller
+- Local DNS or `/etc/hosts` resolution for `securecart.local`
+- TLS certificate and Kubernetes TLS Secret
+- PostgreSQL Kubernetes Secret
 
-Verify installation:
+Verify the primary tools:
 
 ```bash
 docker --version
-kind --version
+kind version
 kubectl version --client
-git --version
-openssl version
-curl --version
+helm version
 ```
-
----
-
-### Clone the Repository
-
-```bash
-git clone https://github.com/GreatOne33/securecart.git
-
-cd securecart
-```
-
----
 
 ### Create the Kind Cluster
 
-```bash
-kind create cluster \
-  --name securecart \
-  --config kind/cluster.yaml
-```
+Create or start the SecureCart Kind cluster using the project's existing local cluster configuration.
 
 Verify the cluster:
 
 ```bash
-kubectl cluster-info
-
 kubectl get nodes
 ```
 
-Expected:
+Expected nodes:
 
 ```text
-NAME                       STATUS   ROLES           AGE
-securecart-control-plane   Ready    control-plane
-securecart-worker          Ready    <none>
+securecart-control-plane
+securecart-worker
 ```
 
----
-
-### Application Images
-
-SecureCart uses versioned container images published to GitHub Container Registry.
-
-Frontend:
+Both nodes should report:
 
 ```text
-ghcr.io/greatone33/securecart-frontend:0.3.0
+Ready
 ```
 
-Backend:
+### Verify NGINX Ingress
 
-```text
-ghcr.io/greatone33/securecart-backend:0.4.1
-```
+SecureCart uses the NGINX Ingress Controller for external application traffic.
 
-The Kubernetes Deployments and database migration Job pull these images directly from GHCR.
-
-Verify the published images:
-
-```bash
-docker pull \
-  ghcr.io/greatone33/securecart-frontend:0.3.0
-
-docker pull \
-  ghcr.io/greatone33/securecart-backend:0.4.1
-```
-
-The registry-backed deployment model replaces the previous local Kind image-loading workflow.
-
-```text
-Application Source
-      |
-      v
-Container Build
-      |
-      v
-GitHub Container Registry
-      |
-      v
-Kubernetes Image Pull
-
-```
----
-
-### Deploy Application Configuration
-
-Apply the SecureCart ConfigMap:
-
-```bash
-kubectl apply \
-  -f kubernetes/base/configmap.yaml
-```
-
-Apply the example Secret:
-
-```bash
-kubectl apply \
-  -f kubernetes/base/secrets/secret-example.yaml
-```
-
-### Deploy PostgreSQL
-
-Apply the PostgreSQL Secret example:
-
-```bash
-kubectl apply \
-  -f kubernetes/base/secrets/postgres-secret-example.yaml
-```
-
-> The example Secret contains development-only credentials. Production credentials must not be committed to source control.
-
-Create the PostgreSQL headless Service:
-
-```bash
-kubectl apply \
-  -f kubernetes/base/postgres-service.yaml
-```
-
-Deploy the PostgreSQL StatefulSet:
-
-```bash
-kubectl apply \
-  -f kubernetes/base/postgres-statefulset.yaml
-```
-
-Wait for PostgreSQL to become Ready:
-
-```bash
-kubectl rollout status \
-  statefulset/securecart-postgres
-```
-
-Verify the database Pod and persistent storage:
-
-```bash
-kubectl get pod securecart-postgres-0
-
-kubectl get pvc
-
-kubectl get pv
-```
-
-Verify PostgreSQL readiness:
-
-```bash
-kubectl exec securecart-postgres-0 -- \
-  pg_isready \
-  -U securecart_app \
-  -d securecart
-```
-
-Expected:
-
-```text
-/var/run/postgresql:5432 - accepting connections
-```
-
-### Initialize the Database
-
-SecureCart manages its PostgreSQL schema through version-controlled Alembic migrations and populates initial application data through an idempotent seed process.
-
-Run the Kubernetes database migration Job:
-
-```bash
-kubectl apply \
-  -f kubernetes/base/database-migration-job.yaml
-```
-
-Wait for the Job to complete:
-
-```bash
-kubectl wait \
-  --for=condition=complete \
-  job/securecart-db-migration \
-  --timeout=120s
-```
-
-Review the migration and seed output:
-
-```bash
-kubectl logs \
-  job/securecart-db-migration
-```
-
-Expected output on an already initialized database resembles:
-
-```text
-Skipping existing product: SecureCart T-Shirt
-Skipping existing product: SecureCart Hoodie
-Skipping existing product: SecureCart Sticker Pack
-```
-
-Verify the resulting database schema:
-
-```bash
-kubectl exec securecart-postgres-0 -- \
-  psql \
-  -U securecart_app \
-  -d securecart \
-  -c "\dt"
-```
-
-The database should contain the Alembic version table and SecureCart product table.
-
-The migration Job provides a repeatable deployment-time database lifecycle:
-
-```text
-Alembic Migration
-       |
-       v
-PostgreSQL Schema
-       |
-       v
-Idempotent Seed
-       |
-       v
-Application Data
-
-```
-
----
-
-### Deploy the Backend
-
-Deploy the FastAPI backend:
-
-```bash
-kubectl apply \
-  -f kubernetes/base/backend-deployment.yaml
-
-kubectl apply \
-  -f kubernetes/base/backend-service.yaml
-```
-
-Wait for the backend rollout:
-
-```bash
-kubectl rollout status \
-  deployment/securecart-backend
-```
-
-Verify the backend Pods and Service:
+Verify that the controller is running:
 
 ```bash
 kubectl get pods \
-  -l app=securecart,component=backend
-
-kubectl get svc securecart-backend-service
-```
-
-Verify that the Service discovered the backend Pods:
-
-```bash
-kubectl get endpointslice \
-  -l kubernetes.io/service-name=securecart-backend-service \
-  -o wide
-```
-
----
-
-### Apply the PostgreSQL NetworkPolicy
-
-Restrict PostgreSQL ingress to explicitly authorized SecureCart database clients:
-
-```bash
-kubectl apply \
-  -f kubernetes/base/network-policies/allow-backend-to-postgres.yaml
-```
-
-Verify:
-```bash
-kubectl get networkpolicy
-```
-
-The complete application trust boundaries are:
-```text
-ingress-nginx -> Frontend :80            ALLOWED
-Other Pods    -> Frontend :80            DENIED
-
-Frontend      -> Backend :8000           ALLOWED
-Other Pods    -> Backend :8000           DENIED
-
-Backend       -> PostgreSQL :5432        ALLOWED
-Migration Job -> PostgreSQL :5432        ALLOWED
-Frontend      -> PostgreSQL :5432        DENIED
-Other Pods    -> PostgreSQL :5432        DENIED
-
-```
-
-### Deploy the Frontend
-
-Deploy the SecureCart frontend:
-
-```bash
-kubectl apply \
-  -f kubernetes/base/frontend-deployment.yaml
-
-kubectl apply \
-  -f kubernetes/base/frontend-service.yaml
-```
-
-Wait for the frontend rollout:
-
-```bash
-kubectl rollout status \
-  deployment/securecart-frontend
-```
-
-Verify the frontend Pods and Service:
-
-```bash
-kubectl get pods \
-  -l app=securecart,component=frontend
-
-kubectl get svc securecart-service
-```
-
-At this point both application tiers should be running:
-
-```text
-Frontend Pods
-      |
-      v
-securecart-backend-service
-      |
-      v
-Backend Pods
-```
-
----
-
-### Install the NGINX Ingress Controller
-
-Install ingress-nginx for Kind:
-
-```bash
-kubectl apply \
-  -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
-```
-
----
-
-### Pin the Ingress Controller to the Mapped Node
-
-The Kind cluster maps host ports 80 and 443 to the control-plane node.
-
-Label the node:
-
-```bash
-kubectl label node securecart-control-plane \
-  ingress-ready=true \
-  --overwrite
-```
-
-Configure the Ingress Controller to run on that node:
-
-```bash
-kubectl patch deployment ingress-nginx-controller \
-  -n ingress-nginx \
-  --type=merge \
-  -p '{
-    "spec": {
-      "template": {
-        "spec": {
-          "nodeSelector": {
-            "kubernetes.io/os": "linux",
-            "ingress-ready": "true"
-          }
-        }
-      }
-    }
-  }'
-
-```
-
-Wait for the controller:
-
-```bash
-kubectl rollout status \
-  deployment/ingress-nginx-controller \
   -n ingress-nginx
 ```
 
-Verify:
+The ingress controller must be available before validating the external HTTPS application path.
 
-```bash
-kubectl get pods \
-  -n ingress-nginx \
-  -o wide
+### Configure Local Host Resolution
+
+The SecureCart Ingress uses:
+
+```text
+securecart.local
 ```
 
----
+Verify that the hostname resolves to the local ingress endpoint.
 
-### Generate Local TLS Certificates
-
-Create a local TLS directory:
-
-```bash
-mkdir -p .local/tls
-```
-
-Generate a self-signed certificate:
-
-```bash
-openssl req \
-  -x509 \
-  -nodes \
-  -newkey rsa:2048 \
-  -sha256 \
-  -days 365 \
-  -keyout .local/tls/securecart.local.key \
-  -out .local/tls/securecart.local.crt \
-  -subj "/CN=securecart.local/O=SecureCart" \
-  -addext "subjectAltName=DNS:securecart.local"
-```
-
----
-
-### Create the Kubernetes TLS Secret
-
-```bash
-kubectl create secret tls securecart-tls \
-  --cert=.local/tls/securecart.local.crt \
-  --key=.local/tls/securecart.local.key
-```
-
-Verify:
-
-```bash
-kubectl get secret securecart-tls
-```
-
----
-
-### Deploy the Ingress
-
-```bash
-kubectl apply \
-  -f kubernetes/base/frontend-ingress.yaml
-```
-
-Verify:
-
-```bash
-kubectl get ingress
-```
-
----
-
-### Configure Local DNS
-
-Add the following entry to your hosts file:
+For the local Kind environment, `/etc/hosts` can be used when required:
 
 ```text
 127.0.0.1 securecart.local
 ```
 
-Linux/macOS:
-
-```text
-/etc/hosts
-```
-
-Windows:
-
-```text
-C:\Windows\System32\drivers\etc\hosts
-```
-
----
-
-### Verify HTTPS Access
-
-Verify that the frontend is accessible through the Ingress Controller:
+Verify resolution:
 
 ```bash
-curl --max-time 5 -I \
-  https://securecart.local
+getent hosts securecart.local
 ```
 
-Expected:
+### PostgreSQL Secret
+
+The Helm chart expects an existing Kubernetes Secret named:
 
 ```text
-HTTP/2 200
+securecart-postgres-secret
 ```
 
-You may also browse to:
+The Secret provides:
 
 ```text
-https://securecart.local
+POSTGRES_DB
+POSTGRES_USER
+POSTGRES_PASSWORD
 ```
 
-The browser may warn about the self-signed development certificate.
+Do not commit plaintext database credentials to the repository.
 
----
+Verify that the Secret exists:
 
-### Apply the Frontend NetworkPolicy
+```bash
+kubectl get secret securecart-postgres-secret
+```
 
-Restrict frontend ingress to the NGINX Ingress Controller:
+### TLS Secret
+
+SecureCart terminates HTTPS at the NGINX Ingress and expects the TLS Secret:
+
+```text
+securecart-tls
+```
+
+Verify that the Secret exists:
+
+```bash
+kubectl get secret securecart-tls
+```
+
+The default Helm configuration references this Secret through:
+
+```yaml
+ingress:
+  enabled: true
+  className: nginx
+  host: securecart.local
+
+  tls:
+    enabled: true
+    secretName: securecart-tls
+```
+
+### Validate the Helm Chart
+
+Before installing the application, validate the chart:
+
+```bash
+helm lint helm/securecart
+```
+
+Render the Kubernetes resources locally:
+
+```bash
+helm template securecart \
+  helm/securecart
+```
+
+For Kubernetes API validation, render the chart to a temporary manifest:
+
+```bash
+helm template securecart \
+  helm/securecart \
+  > /tmp/securecart-rendered.yaml
+```
+
+Then perform a server-side dry run:
 
 ```bash
 kubectl apply \
-  -f kubernetes/base/network-policies/allow-ingress-to-frontend.yaml
+  --dry-run=server \
+  -f /tmp/securecart-rendered.yaml
 ```
 
-Verify:
+This validates the rendered resources against the Kubernetes API without persisting them.
+
+### Install SecureCart with Helm
+
+Install the application:
+
+```bash
+helm install securecart \
+  helm/securecart
+```
+
+The default release is installed into the current Kubernetes namespace.
+
+Verify the Helm release:
+
+```bash
+helm list
+```
+
+Inspect release status:
+
+```bash
+helm status securecart
+```
+
+Inspect release history:
+
+```bash
+helm history securecart
+```
+
+A successful initial installation should create Helm release revision 1.
+
+### Verify Kubernetes Resources
+
+Verify the application workloads:
+
+```bash
+kubectl get deployments,statefulsets,jobs,pods
+```
+
+Verify application Services:
+
+```bash
+kubectl get svc
+```
+
+Verify the Ingress:
+
+```bash
+kubectl get ingress
+```
+
+Verify NetworkPolicies:
 
 ```bash
 kubectl get networkpolicy
 ```
 
----
-
-### Apply the Backend NetworkPolicy
-
-Restrict backend ingress to SecureCart frontend workloads:
+Verify persistent storage:
 
 ```bash
-kubectl apply \
-  -f kubernetes/base/network-policies/allow-frontend-to-backend.yaml
+kubectl get pvc
 ```
 
-Verify:
+The expected application architecture includes:
+
+```text
+Frontend Deployment
+        |
+        v
+Frontend Service
+        |
+        v
+Backend Deployment
+        |
+        v
+Backend Service
+        |
+        v
+PostgreSQL StatefulSet
+        |
+        v
+PersistentVolumeClaim
+```
+
+The database migration Job initializes the version-controlled database schema and seed data before the application consumes the PostgreSQL-backed catalog.
+
+### Validate the Application
+
+Test the PostgreSQL-backed product API:
 
 ```bash
-kubectl get networkpolicy
-```
-
-The intended network boundaries are:
-
-```text
-ingress-nginx -> Frontend :80       ALLOWED
-Other Pods    -> Frontend :80       DENIED
-
-Frontend      -> Backend :8000      ALLOWED
-Other Pods    -> Backend :8000      DENIED
-```
-
-### Validate PostgreSQL Network Isolation
-
-Verify that an unauthorized workload cannot reach PostgreSQL:
-
-```bash
-kubectl run postgres-test \
-  --image=postgres:17-alpine \
-  --restart=Never \
-  --rm -i \
-  -- pg_isready \
-  -h securecart-postgres \
-  -p 5432 \
-  -t 5
-  ```
-  Expected:
-
-  ```text
-  securecart-postgres:5432 - no response
-  ```
-
-  Verify that a frontend workload cannot reach PostgreSQL:
-  ```text
-  kubectl run frontend-postgres-test \
-  --image=postgres:17-alpine \
-  --restart=Never \
-  --labels="app=securecart,component=frontend" \
-  --rm -i \
-  -- pg_isready \
-  -h securecart-postgres \
-  -p 5432 \
-  -t 5
-  ```
-
-Expected:
-```text
-  securecart-postgres:5432 - no response
-  ```
-
-Verify that a backend workload can reach PostgreSQL:
-```text
-kubectl run backend-postgres-test \
-  --image=postgres:17-alpine \
-  --restart=Never \
-  --labels="app=securecart,component=backend" \
-  --rm -i \
-  -- pg_isready \
-  -h securecart-postgres \
-  -p 5432 \
-  -t 5
-```
-
-Expected:
-```text
-securecart-postgres:5432 - accepting connections
-```
-
-This validates the database trust boundary:
-```text
-Backend ------------> PostgreSQL :5432   ALLOWED
-Migration Job ------> PostgreSQL :5432   ALLOWED
-Frontend -----------> PostgreSQL :5432   DENIED
-Other workloads ----> PostgreSQL :5432   DENIED
-```
-
----
-
-### Validate Frontend Network Isolation
-
-Traffic through the NGINX Ingress Controller should succeed:
-
-```bash
-curl --max-time 5 -I \
-  https://securecart.local
-```
-
-Expected:
-
-```text
-HTTP/2 200
-```
-
-Direct traffic from an unauthorized Pod to the frontend should fail:
-
-```bash
-kubectl run network-test \
-  --image=busybox:1.36 \
-  --restart=Never \
-  --rm -i \
-  -- wget -T 5 -qO- \
-  http://securecart-service
-```
-
-Expected:
-
-```text
-wget: download timed out
-```
-
----
-
-### Validate Backend Network Isolation
-
-Verify that an unauthorized Pod cannot access the backend:
-
-```bash
-kubectl run backend-test \
-  --image=busybox:1.36 \
-  --restart=Never \
-  --rm -i \
-  -- wget -T 5 -qO- \
-  http://securecart-backend-service:8000/api/status
-```
-
-Expected:
-
-```text
-wget: download timed out
-```
-
-Now test using the SecureCart frontend workload identity:
-
-```bash
-kubectl run frontend-network-test \
-  --image=busybox:1.36 \
-  --restart=Never \
-  --labels="app=securecart,component=frontend" \
-  --rm -i \
-  -- wget -qO- \
-  http://securecart-backend-service:8000/api/status
-```
-
-Expected output resembles:
-
-```json
-{
-  "application": "SecureCart Backend",
-  "version": "0.1.0",
-  "environment": "Staging",
-  "pod": "securecart-backend-...",
-  "status": "running"
-}
-```
-
-This validates:
-
-```text
-Frontend workload -> Backend :8000   ALLOWED
-Other workload    -> Backend :8000   DENIED
-```
-
----
-
-### Validate End-to-End API Routing
-
-Finally, test the complete SecureCart application path:
-
-```bash
-curl -i \
+curl --max-time 10 -i \
   https://securecart.local/api/products
 ```
 
-Expected:
+Expected HTTP status:
 
 ```text
 HTTP/2 200
-content-type: application/json
 ```
 
-The response should contain the SecureCart product catalog.
+Test backend database connectivity:
 
-This validates the complete request path:
+```bash
+curl --max-time 10 -i \
+  https://securecart.local/api/db-status
+```
+
+Expected response:
+
+```json
+{
+  "database": "PostgreSQL",
+  "status": "connected",
+  "test_query": 1
+}
+```
+
+This validates the application path:
 
 ```text
 Client
   |
-  | HTTPS
   v
-NGINX Ingress Controller
+NGINX Ingress
   |
   v
-Frontend Service
+Frontend
   |
   v
-Frontend NGINX
+Backend
   |
-  | /api/*
-  v
-Backend ClusterIP Service
-  |
-  v
-FastAPI Backend Pods
-  |
-  | SQL / TCP 5432
   v
 PostgreSQL
-  |
-  v
-Persistent Storage
 ```
 
-The frontend, backend, and PostgreSQL database remain internal Kubernetes workloads. Only the application entry point is exposed through Ingress.
+### Helm Configuration
 
----
+Default deployment configuration is stored in:
 
-### Validate Database Persistence
+```text
+helm/securecart/values.yaml
+```
 
-Verify the current product catalog:
+The values file controls configuration including:
+
+```text
+Application metadata
+Frontend replica count
+Backend replica count
+Container image repositories and tags
+Image pull policies
+Service ports
+CPU and memory requests
+CPU and memory limits
+PostgreSQL storage
+Ingress configuration
+TLS configuration
+NetworkPolicy enablement
+```
+
+Inspect the default values:
 
 ```bash
-curl -i \
+cat helm/securecart/values.yaml
+```
+
+Render the chart with a temporary override:
+
+```bash
+helm template securecart \
+  helm/securecart \
+  --set frontend.replicaCount=4
+```
+
+This changes the rendered configuration without modifying `values.yaml`.
+
+### Upgrade the Helm Release
+
+After modifying the chart or deployment configuration, upgrade the existing release:
+
+```bash
+helm upgrade securecart \
+  helm/securecart
+```
+
+Values can also be overridden during an upgrade.
+
+For example:
+
+```bash
+helm upgrade securecart \
+  helm/securecart \
+  --set frontend.replicaCount=4
+```
+
+Verify the Deployment:
+
+```bash
+kubectl get deployment securecart-frontend
+```
+
+Inspect the new Helm revision:
+
+```bash
+helm history securecart
+```
+
+Helm creates a new release revision for a successful upgrade.
+
+### Roll Back a Release
+
+View the release history:
+
+```bash
+helm history securecart
+```
+
+Restore a previous revision:
+
+```bash
+helm rollback securecart <revision>
+```
+
+For example:
+
+```bash
+helm rollback securecart 1
+```
+
+Verify the resulting release:
+
+```bash
+helm status securecart
+helm history securecart
+```
+
+Then validate the application again:
+
+```bash
+curl --max-time 10 -i \
   https://securecart.local/api/products
+
+curl --max-time 10 -i \
+  https://securecart.local/api/db-status
 ```
 
-Delete the PostgreSQL Pod:
+A rollback creates a new Helm revision while restoring the selected previous release configuration.
 
-```bash
-kubectl delete pod securecart-postgres-0
+### Helm Release Lifecycle
+
+The local deployment workflow is now:
+
+```text
+Source Code
+    |
+    v
+Container Images
+    |
+    v
+GitHub Container Registry
+    |
+    v
+Helm Chart + values.yaml
+    |
+    v
+helm install / helm upgrade
+    |
+    v
+Helm Release
+    |
+    v
+Kubernetes
 ```
 
-The StatefulSet automatically recreates the database Pod.
+Helm provides application packaging, configuration, release history, upgrades, and rollback.
 
-Wait until it becomes Ready:
+Kubernetes remains responsible for workload reconciliation.
 
-```bash
-kubectl get pods -w
+For example, changing only the frontend replica count causes Kubernetes to scale the existing ReplicaSet rather than recreate every frontend Pod.
+
+### Raw Kubernetes Manifests
+
+The original Kubernetes manifests are retained under:
+
+```text
+kubernetes/base/
 ```
 
-Then query the product API again:
+These manifests remain useful for:
 
-```bash
-curl -i \
-  https://securecart.local/api/products
-```
+- Understanding the Kubernetes resources directly
+- Kubernetes learning
+- Architecture inspection
+- Troubleshooting
+- Comparing Helm-rendered resources with the underlying implementation
 
-The product catalog should remain available because PostgreSQL data is stored independently of the Pod lifecycle through the PersistentVolumeClaim.
+Helm is now the preferred deployment interface for SecureCart.
 
-Verify that the claim remains bound:
-
-```bash
-kubectl get pvc
-
-kubectl get pv
-```
-
----
-
-### Final Deployment Verification
-
-Verify the complete application:
-
-```bash
-kubectl get deployments
-
-kubectl get statefulsets
-
-kubectl get pods
-
-kubectl get svc
-
-kubectl get pvc
-
-kubectl get pv
-
-kubectl get ingress
-
-kubectl get networkpolicy
-```
-
-Frontend and backend Deployments should be available, the PostgreSQL StatefulSet should report `1/1` Ready, the database PVC should be `Bound`, and all application Pods should be Ready.
-
----
-
-### Clean Up
-
-Delete the local cluster when finished:
-
-```bash
-kind delete cluster \
-  --name securecart
-```
-
----
+The base manifests remain the foundational Kubernetes architecture reference.
 
 ## 📁 Repository Structure
 
 ```text
 securecart/
 ├── app/
-│   ├── frontend/
+│   ├── backend/
+│   │   ├── migrations/
+│   │   │   ├── versions/
+│   │   │   │   └── bc2cf364d1fc_create_products_table.py
+│   │   │   ├── env.py
+│   │   │   ├── README
+│   │   │   └── script.py.mako
+│   │   ├── alembic.ini
 │   │   ├── Dockerfile
-│   │   ├── docker-entrypoint.sh
-│   │   ├── index.html.template
-│   │   └── nginx.conf.template
+│   │   ├── main.py
+│   │   ├── requirements.txt
+│   │   └── seed.py
 │   │
-│   └── backend/
-│       ├── migrations/
-│       ├── alembic.ini
+│   └── frontend/
 │       ├── Dockerfile
-│       ├── main.py
-│       ├── requirements.txt
-│       └── seed.py
+│       ├── docker-entrypoint.sh
+│       ├── index.html.template
+│       └── nginx.conf.template
 │
 ├── docs/
+│   ├── testing/
+│   │   └── health-probes.md
 │   ├── architecture.md
 │   ├── decisions.md
 │   ├── engineering-journal.md
 │   ├── roadmap.md
 │   └── troubleshooting.md
 │
+├── helm/
+│   └── securecart/
+│       ├── templates/
+│       │   ├── allow-backend-to-postgres.yaml
+│       │   ├── allow-frontend-to-backend.yaml
+│       │   ├── allow-ingress-to-frontend.yaml
+│       │   ├── backend-deployment.yaml
+│       │   ├── backend-service.yaml
+│       │   ├── configmap.yaml
+│       │   ├── database-migration-job.yaml
+│       │   ├── frontend-deployment.yaml
+│       │   ├── frontend-ingress.yaml
+│       │   ├── frontend-service.yaml
+│       │   ├── postgres-service.yaml
+│       │   └── postgres-statefulset.yaml
+│       ├── Chart.yaml
+│       └── values.yaml
+│
 ├── kind/
 │   └── cluster.yaml
 │
-└── kubernetes/
-    └── base/
-        ├── backend-deployment.yaml
-        ├── backend-service.yaml
-        ├── configmap.yaml
-        ├── database-migration-job.yaml
-        ├── frontend-deployment.yaml
-        ├── frontend-ingress.yaml
-        ├── frontend-service.yaml
-        ├── postgres-service.yaml
-        ├── postgres-statefulset.yaml
-        ├── network-policies/
-        │   ├── allow-backend-to-postgres.yaml
-        │   ├── allow-frontend-to-backend.yaml
-        │   └── allow-ingress-to-frontend.yaml
-        └── secrets/
-            ├── postgres-secret-example.yaml
-            └── secret-example.yaml
+├── kubernetes/
+│   └── base/
+│       ├── network-policies/
+│       │   ├── allow-backend-to-postgres.yaml
+│       │   ├── allow-frontend-to-backend.yaml
+│       │   └── allow-ingress-to-frontend.yaml
+│       ├── secrets/
+│       │   ├── postgres-secret-example.yaml
+│       │   └── secret-example.yaml
+│       ├── backend-deployment.yaml
+│       ├── backend-service.yaml
+│       ├── configmap.yaml
+│       ├── database-migration-job.yaml
+│       ├── frontend-deployment.yaml
+│       ├── frontend-ingress.yaml
+│       ├── frontend-service.yaml
+│       ├── postgres-service.yaml
+│       └── postgres-statefulset.yaml
+│
+├── .gitignore
+├── LICENSE
+└── README.md
 ```
 
----
+### Application
+
+`app/` contains the SecureCart application source and container definitions.
+
+The backend includes the FastAPI application, PostgreSQL integration, Alembic migration framework, and idempotent database seed process.
+
+The frontend contains the unprivileged NGINX-based application image, runtime entrypoint, application template, and reverse-proxy configuration.
+
+### Helm
+
+`helm/securecart/` contains the preferred Kubernetes deployment package.
+
+The chart parameterizes deployment configuration through `values.yaml` and renders the complete SecureCart Kubernetes architecture, including:
+
+- Frontend and backend Deployments
+- Application Services
+- PostgreSQL StatefulSet and headless Service
+- Database migration Job
+- ConfigMap
+- HTTPS Ingress
+- Application NetworkPolicies
+
+Helm provides release installation, upgrades, revision history, and rollback.
+
+### Kubernetes
+
+`kubernetes/base/` contains the foundational Kubernetes manifests used to build and validate the application architecture before Helm packaging.
+
+These manifests remain useful for:
+
+- Kubernetes learning
+- Direct resource inspection
+- Architecture reference
+- Troubleshooting
+- Comparing raw manifests with Helm-rendered resources
+
+### Kind
+
+`kind/cluster.yaml` defines the local multi-node Kind cluster used for SecureCart development and testing.
+
+### Documentation
+
+`docs/` contains the project's engineering documentation:
+
+- `architecture.md` — application and deployment architecture
+- `decisions.md` — Architecture Decision Records
+- `engineering-journal.md` — implementation history and lessons learned
+- `roadmap.md` — project milestones
+- `troubleshooting.md` — investigated failures and resolutions
+- `testing/` — focused validation procedures
 
 ## 📚 Documentation
 
@@ -1369,9 +1075,9 @@ Project documentation is maintained throughout development.
 
 ## 🚀 Current Focus
 
-**Current milestone:** Helm packaging and deployment standardization
+**Current milestone:** CI/CD automation with GitHub Actions
 
-SecureCart has entered the DevOps engineering phase.
+SecureCart has completed its initial Helm packaging and release-management milestone.
 
 The application now includes:
 
@@ -1385,6 +1091,10 @@ The application now includes:
 - Dropped Linux capabilities and disabled privilege escalation
 - Versioned application container images
 - GitHub Container Registry publishing
+- Helm-based Kubernetes application packaging
+- Parameterized deployment configuration through `values.yaml`
+- Helm release ownership and revision history
+- Validated Helm upgrade and rollback workflows
 - End-to-end HTTPS application validation
 
 The current deployment lifecycle is:
@@ -1399,6 +1109,12 @@ Container Images
 GitHub Container Registry
        |
        v
+    Helm Chart
+       |
+       v
+   Helm Release
+       |
+       v
 Kubernetes Workloads
        |
        +------> Database Migration Job
@@ -1409,11 +1125,29 @@ Kubernetes Workloads
        +------> Frontend / Backend
 ```
 
+The current Helm release lifecycle supports:
+
+```text
+helm install
+     |
+     v
+Release Revision
+     |
+     v
+helm upgrade
+     |
+     v
+New Revision
+     |
+     v
+helm rollback
+```
+
 Upcoming work:
-- Create a Helm chart
+
 - Configure GitHub Actions
 - Introduce automated testing
-- Automate Kubernetes deployments
+- Automate Helm-based Kubernetes deployments
 
 **Long-term goal:** Deploy SecureCart to Amazon EKS using Terraform, Helm, and GitHub Actions.
 

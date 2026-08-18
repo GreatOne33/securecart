@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: securecart-frontend
+  labels:
+    app: securecart
+    component: frontend
+
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+
+  selector:
+    matchLabels:
+      app: securecart
+      component: frontend
+
+  template:
+    metadata:
+      labels:
+        app: securecart
+        component: frontend
+
+    spec:
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+
+          ports:
+            - containerPort: {{ .Values.frontend.containerPort }}
+
+          env:
+            - name: APP_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: securecart-config
+                  key: APP_NAME
+
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: securecart-config
+                  key: ENVIRONMENT
+
+            - name: VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: securecart-config
+                  key: VERSION
+
+            - name: COMPANY
+              valueFrom:
+                configMapKeyRef:
+                  name: securecart-config
+                  key: COMPANY
+
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
+            - name: BACKEND_HOST
+              value: "securecart-backend-service"
+
+            - name: BACKEND_PORT
+              value: {{ .Values.backend.service.port | quote }}
+
+          startupProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.frontend.containerPort }}
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.frontend.containerPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+            successThreshold: 1
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.frontend.containerPort }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+            successThreshold: 1
+
+          resources:
+{{ toYaml .Values.frontend.resources | indent 12 }}
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          volumeMounts:
+            - name: frontend-tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: frontend-tmp
+          emptyDir: {}

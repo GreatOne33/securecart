@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: securecart-service
+
+spec:
+  type: {{ .Values.frontend.service.type }}
+
+  selector:
+    app: securecart
+    component: frontend
+
+  ports:
+    - protocol: TCP
+      port: {{ .Values.frontend.service.port }}
+      targetPort: {{ .Values.frontend.service.targetPort }}

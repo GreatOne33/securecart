@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: StatefulSet
+
+metadata:
+  name: securecart-postgres
+  labels:
+    app: securecart
+    component: database
+
+spec:
+  serviceName: securecart-postgres
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: securecart
+      component: database
+
+  template:
+    metadata:
+      labels:
+        app: securecart
+        component: database
+
+    spec:
+      containers:
+        - name: postgres
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+
+          ports:
+            - containerPort: {{ .Values.postgres.containerPort }}
+              name: postgres
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+
+          envFrom:
+            - secretRef:
+                name: {{ .Values.postgres.existingSecret }}
+
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          resources:
+{{ toYaml .Values.postgres.resources | indent 12 }}
+
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+
+      spec:
+        accessModes:
+          - {{ .Values.postgres.persistence.accessMode }}
+
+        storageClassName: {{ .Values.postgres.persistence.storageClass }}
+
+        resources:
+          requests:
+            storage: {{ .Values.postgres.persistence.size }}

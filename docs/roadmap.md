@@ -73,7 +73,7 @@
 - [x] Create Kubernetes database migration Job
 - [x] Harden production-style frontend and backend container images
 - [x] Publish versioned application images to GitHub Container Registry
-- [ ] Create Helm chart
+- [x] Package Kubernetes application with Helm and validate release lifecycle
 - [ ] Configure GitHub Actions
 - [ ] Automated testing
 - [ ] Automated Kubernetes deployments

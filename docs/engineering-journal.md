@@ -2354,3 +2354,441 @@ Database structure can be recreated from repository-controlled migration files a
 - Versioned registry images create a deployable artifact boundary between application builds and Kubernetes deployments.
 - Registry artifacts should be validated independently of local authentication and local image state.
 - Local Kind NetworkPolicy reconciliation behavior should not be confused with an application architecture requirement.
+
+---
+
+# Engineering Journal - v1.1.0
+
+## Helm Packaging and Release Management
+
+SecureCart's Kubernetes deployment was packaged into a Helm chart to provide a reusable and parameterized deployment model.
+
+Prior to this milestone, Kubernetes resources were managed through individual manifests under:
+
+```text
+kubernetes/base/
+```
+
+These manifests established the application's Kubernetes architecture, but deployment configuration was distributed across multiple static YAML files.
+
+The Helm implementation introduces a deployment abstraction where environment-specific and operational settings are defined through values while Kubernetes resource structure remains in reusable templates.
+
+The chart is located at:
+
+```text
+helm/securecart/
+```
+
+The initial chart was created with:
+
+```bash
+helm create helm/securecart
+```
+
+The generated example workloads were removed and replaced with templates based on SecureCart's existing Kubernetes architecture.
+
+### Helm Chart Structure
+
+The SecureCart chart manages the following application resources:
+
+```text
+ConfigMap
+
+Frontend
+  Deployment
+  Service
+
+Backend
+  Deployment
+  Service
+
+PostgreSQL
+  StatefulSet
+  Headless Service
+
+Database Lifecycle
+  Migration Job
+
+Networking
+  Ingress
+  NetworkPolicies
+```
+
+The resulting chart structure is:
+
+```text
+helm/securecart/
+├── Chart.yaml
+├── values.yaml
+└── templates/
+    ├── _helpers.tpl
+    ├── configmap.yaml
+    ├── frontend-deployment.yaml
+    ├── frontend-service.yaml
+    ├── backend-deployment.yaml
+    ├── backend-service.yaml
+    ├── postgres-statefulset.yaml
+    ├── postgres-service.yaml
+    ├── database-migration-job.yaml
+    ├── frontend-ingress.yaml
+    ├── allow-ingress-to-frontend.yaml
+    ├── allow-frontend-to-backend.yaml
+    └── allow-backend-to-postgres.yaml
+```
+
+### Deployment Parameterization
+
+Deployment configuration was moved into `values.yaml`.
+
+Values are organized by application component:
+
+```text
+global
+frontend
+backend
+postgres
+migration
+ingress
+networkPolicy
+```
+
+This separates configuration values from Kubernetes resource definitions.
+
+Examples of parameterized configuration include:
+
+```text
+Frontend replica count
+Frontend and backend image repositories
+Image tags
+Image pull policies
+Container ports
+Service ports
+CPU and memory requests
+CPU and memory limits
+PostgreSQL storage size
+PostgreSQL storage class
+Ingress host
+TLS configuration
+NetworkPolicy enablement
+```
+
+This allows the same Kubernetes templates to render different deployment configurations without maintaining duplicate manifests.
+
+For example:
+
+```bash
+helm template securecart \
+  helm/securecart \
+  --set frontend.service.port=8088
+```
+
+renders the frontend Service using port `8088` without modifying the Service template.
+
+Likewise:
+
+```bash
+helm template securecart \
+  helm/securecart \
+  --set postgres.persistence.size=2Gi
+```
+
+renders a PostgreSQL volume claim requesting `2Gi` instead of the default `1Gi`.
+
+### Conditional Kubernetes Resources
+
+Ingress and NetworkPolicy resources were made configurable through Helm values.
+
+Ingress can be disabled using:
+
+```bash
+helm template securecart \
+  helm/securecart \
+  --set ingress.enabled=false
+```
+
+NetworkPolicies can be disabled using:
+
+```bash
+helm template securecart \
+  helm/securecart \
+  --set networkPolicy.enabled=false
+```
+
+This allows deployment capabilities to be enabled or disabled without maintaining separate versions of the Kubernetes manifests.
+
+TLS behavior is also parameterized.
+
+Disabling TLS:
+
+```bash
+helm template securecart \
+  helm/securecart \
+  --set ingress.tls.enabled=false
+```
+
+removes the TLS configuration and renders the NGINX SSL redirect annotation as:
+
+```text
+nginx.ingress.kubernetes.io/ssl-redirect: "false"
+```
+
+### Helm Validation Workflow
+
+The chart was validated before installation using multiple levels of testing.
+
+Chart structure and template syntax were validated with:
+
+```bash
+helm lint helm/securecart
+```
+
+Result:
+
+```text
+1 chart(s) linted, 0 chart(s) failed
+```
+
+Rendered Kubernetes manifests were inspected using:
+
+```bash
+helm template securecart \
+  helm/securecart
+```
+
+The complete rendered manifest contained:
+
+```text
+3 NetworkPolicies
+1 ConfigMap
+3 Services
+2 Deployments
+1 StatefulSet
+1 Job
+1 Ingress
+```
+
+The rendered resources were then validated against the Kubernetes API server:
+
+```bash
+kubectl apply \
+  --dry-run=server \
+  -f /tmp/securecart-rendered.yaml
+```
+
+All rendered resources passed server-side validation.
+
+`kubectl diff` was also used before installation to identify differences between the existing cluster resources and the Helm-rendered desired state.
+
+### Adopting Existing Kubernetes Resources
+
+SecureCart was already running in the Kind cluster before Helm was introduced.
+
+Rather than deleting and recreating the application, the existing Kubernetes resources were adopted into the Helm release:
+
+```bash
+helm install securecart \
+  helm/securecart \
+  --take-ownership
+```
+
+The installation created Helm release revision 1:
+
+```text
+NAME: securecart
+NAMESPACE: default
+STATUS: deployed
+REVISION: 1
+CHART: securecart-0.1.0
+APP VERSION: 1.0.0
+```
+
+Helm ownership was verified through Kubernetes metadata.
+
+Managed resources contained:
+
+```text
+app.kubernetes.io/managed-by: Helm
+meta.helm.sh/release-name: securecart
+meta.helm.sh/release-namespace: default
+```
+
+The adoption did not require recreating the existing application Pods because the effective Pod templates remained compatible with the running workloads.
+
+The application remained available after Helm assumed management.
+
+### Helm Upgrade Validation
+
+Helm release upgrades were tested by changing the frontend replica count without modifying `values.yaml`:
+
+```bash
+helm upgrade securecart \
+  helm/securecart \
+  --set frontend.replicaCount=4
+```
+
+This created Helm revision 2.
+
+The frontend Deployment changed from:
+
+```text
+3 replicas
+```
+
+to:
+
+```text
+4 replicas
+```
+
+Kubernetes did not replace the three existing frontend Pods.
+
+Instead, the Deployment created only one additional Pod because the Pod template itself had not changed.
+
+The existing ReplicaSet remained valid and Kubernetes only reconciled the difference in desired replica count.
+
+The resulting state was:
+
+```text
+Existing frontend Pods: 3
+New frontend Pod:       1
+Total replicas:         4
+```
+
+Helm recorded the override for revision 2 as:
+
+```yaml
+frontend:
+  replicaCount: 4
+```
+
+This demonstrated the separation between Helm release configuration and the chart's default `values.yaml`.
+
+### Helm Rollback Validation
+
+Rollback behavior was tested by restoring revision 1:
+
+```bash
+helm rollback securecart 1
+```
+
+Helm created revision 3:
+
+```text
+Revision 1  Install complete
+Revision 2  Upgrade complete
+Revision 3  Rollback to 1
+```
+
+The rollback restored the frontend replica count from four to three.
+
+Kubernetes removed the additional replica while preserving the original three frontend Pods.
+
+The release returned to the default chart configuration:
+
+```text
+USER-SUPPLIED VALUES:
+null
+```
+
+This validated that Helm can restore a previously deployed release configuration without manually reconstructing Kubernetes manifests.
+
+### Application Validation After Helm Migration
+
+The complete application path was validated after Helm installation, upgrade, and rollback.
+
+Product API validation:
+
+```bash
+curl --max-time 10 -i \
+  https://securecart.local/api/products
+```
+
+Result:
+
+```text
+HTTP/2 200
+```
+
+The PostgreSQL-backed product catalog remained available.
+
+Database connectivity validation:
+
+```bash
+curl --max-time 10 -i \
+  https://securecart.local/api/db-status
+```
+
+Result:
+
+```text
+HTTP/2 200
+```
+
+with:
+
+```json
+{
+  "database": "PostgreSQL",
+  "status": "connected",
+  "test_query": 1
+}
+```
+
+The final Helm release state was:
+
+```text
+STATUS: deployed
+REVISION: 3
+```
+
+### Current Deployment Lifecycle
+
+SecureCart's local deployment lifecycle is now:
+
+```text
+             values.yaml
+                  |
+                  v
+          Helm Chart Templates
+                  |
+                  v
+             helm install
+             helm upgrade
+                  |
+                  v
+          Helm Release State
+                  |
+                  v
+        Kubernetes API Server
+                  |
+        +---------+---------+
+        |         |         |
+        v         v         v
+     Frontend   Backend  PostgreSQL
+        |         |         ^
+        |         |         |
+        +-------->|---------+
+                  |
+             Migration Job
+```
+
+Helm now provides the release-management layer between repository-controlled deployment configuration and Kubernetes.
+
+The original manifests under `kubernetes/base/` remain useful as the foundational Kubernetes implementation and as a reference for understanding the resources represented by the Helm chart.
+
+### Lessons Learned
+
+- Helm templates separate reusable Kubernetes resource structure from deployment-specific configuration.
+- `values.yaml` serves a role similar to an input-variable layer by centralizing values consumed by templates.
+- `helm lint` validates chart structure and template correctness, while `helm template` exposes the Kubernetes manifests that Helm will render.
+- Server-side dry-run validation provides an additional check against the Kubernetes API before changing live resources.
+- `kubectl diff` is useful for identifying desired-state differences before adopting or upgrading existing workloads.
+- Helm can adopt existing Kubernetes resources without necessarily recreating the workloads they manage.
+- Helm ownership and Kubernetes workload lifecycle are separate concepts; changing resource ownership does not inherently require Pod replacement.
+- Changing only a Deployment replica count causes Kubernetes to scale the existing ReplicaSet rather than perform a rolling replacement.
+- Changes to the Pod template would instead create a new ReplicaSet and trigger Deployment rollout behavior.
+- Helm stores release revisions, allowing deployment configuration to be inspected and restored.
+- `--set` overrides can modify a release without changing the chart's default `values.yaml`.
+- A Helm rollback creates a new release revision rather than deleting release history.
+- Rollback behavior should be validated against the running application, not assumed from Helm command success alone.
+- Packaging SecureCart with Helm establishes the deployment interface that future CI/CD automation can use.

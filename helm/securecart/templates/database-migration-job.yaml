@@ -1,0 +1,72 @@
+{{- if .Values.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+
+metadata:
+  name: securecart-db-migration
+  labels:
+    app: securecart
+    component: database-migration
+
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+
+  template:
+    metadata:
+      labels:
+        app: securecart
+        component: database-migration
+
+    spec:
+      restartPolicy: Never
+
+      containers:
+        - name: migration
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          command:
+            - /bin/sh
+            - -c
+
+          args:
+            - |
+              set -e
+              alembic upgrade head
+              python seed.py
+
+          env:
+            - name: DB_HOST
+              value: "securecart-postgres"
+
+            - name: DB_PORT
+              value: {{ .Values.postgres.service.port | quote }}
+
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.existingSecret }}
+                  key: POSTGRES_DB
+
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.existingSecret }}
+                  key: POSTGRES_USER
+
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.existingSecret }}
+                  key: POSTGRES_PASSWORD
+{{- end }}
