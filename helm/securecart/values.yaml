@@ -10,7 +10,7 @@ frontend:
 
   image:
     repository: ghcr.io/greatone33/securecart-frontend
-    tag: "0.3.0"
+    tag: "0.3.2"
     pullPolicy: Always
 
   containerPort: 8080

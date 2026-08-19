@@ -2792,3 +2792,230 @@ The original manifests under `kubernetes/base/` remain useful as the foundationa
 - A Helm rollback creates a new release revision rather than deleting release history.
 - Rollback behavior should be validated against the running application, not assumed from Helm command success alone.
 - Packaging SecureCart with Helm establishes the deployment interface that future CI/CD automation can use.
+
+---
+
+# Engineering Journal - v1.1.1
+
+## Frontend DNS Resilience and Runtime Service Discovery
+
+A frontend Pod entered `CrashLoopBackOff` after a local Kind networking disruption.
+
+The previous container logs showed:
+
+```text
+host not found in upstream "securecart-backend-service"
+```
+
+The frontend used NGINX as a reverse proxy and referenced the backend Service directly through:
+
+```text
+securecart-backend-service:8000
+```
+
+NGINX attempted to resolve the backend hostname while loading its configuration.
+
+When Kubernetes DNS was temporarily unavailable during container startup, NGINX failed to start and exited with status code 1.
+
+This created an unnecessary availability dependency:
+
+```text
+Temporary backend DNS failure
+        |
+        v
+NGINX startup failure
+        |
+        v
+Container exit
+        |
+        v
+CrashLoopBackOff
+```
+
+### Runtime DNS Resolution
+
+The frontend NGINX configuration was changed to perform backend DNS resolution at request time instead of process startup.
+
+The container entrypoint now discovers the runtime DNS resolver from:
+
+```text
+/etc/resolv.conf
+```
+
+and injects it into the generated NGINX configuration.
+
+The runtime configuration includes:
+
+```nginx
+resolver ${DNS_RESOLVER} valid=10s ipv6=off;
+resolver_timeout 2s;
+```
+
+The backend address is supplied through an NGINX variable:
+
+```nginx
+set $backend_upstream "${BACKEND_UPSTREAM_HOST}:${BACKEND_PORT}";
+```
+
+and requests use:
+
+```nginx
+proxy_pass http://$backend_upstream;
+```
+
+This allows NGINX to start even when the backend hostname is temporarily unavailable.
+
+### Local Failure and Recovery Validation
+
+Frontend image `0.3.1` was tested locally with a backend hostname that did not exist.
+
+The frontend successfully started and returned:
+
+```text
+GET / -> HTTP 200
+```
+
+while backend requests returned:
+
+```text
+GET /api/products -> HTTP 502
+```
+
+The frontend container remained running.
+
+A backend container was then added to the Docker network without restarting the frontend.
+
+After DNS became available:
+
+```text
+GET /api/status -> HTTP 200
+```
+
+The frontend container reported:
+
+```text
+Status=running RestartCount=0
+```
+
+This confirmed that the frontend could recover dynamically when the backend became available later.
+
+### Kubernetes Short-Name Resolution Investigation
+
+The first runtime DNS implementation used the short Kubernetes Service name:
+
+```text
+securecart-backend-service
+```
+
+Inside Kubernetes, the frontend remained healthy but API requests returned HTTP 502.
+
+The Pod resolver configuration contained:
+
+```text
+search default.svc.cluster.local svc.cluster.local cluster.local localdomain
+nameserver 10.96.0.10
+```
+
+The backend Service and both backend endpoints were healthy.
+
+The runtime NGINX resolver was therefore updated to use the fully qualified Kubernetes Service DNS name.
+
+The frontend Deployment now receives its namespace through the Downward API:
+
+```yaml
+- name: POD_NAMESPACE
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.namespace
+```
+
+The backend runtime hostname is constructed as:
+
+```text
+securecart-backend-service.$(POD_NAMESPACE).svc.cluster.local
+```
+
+In the default namespace this becomes:
+
+```text
+securecart-backend-service.default.svc.cluster.local
+```
+
+### Frontend Image 0.3.2
+
+Frontend image `0.3.2` introduced:
+
+```text
+Runtime DNS resolver discovery
+Namespace-aware Kubernetes Service FQDN
+Dynamic backend resolution
+```
+
+The image was published to GitHub Container Registry and deployed through Helm.
+
+The generated NGINX configuration inside Kubernetes contained:
+
+```text
+resolver 10.96.0.10 valid=10s ipv6=off
+securecart-backend-service.default.svc.cluster.local:8000
+```
+
+All three frontend replicas became Ready with zero restarts.
+
+### Backend Version Metadata
+
+The backend Deployment previously exposed:
+
+```text
+API_VERSION=0.1.0
+```
+
+while the deployed backend image was:
+
+```text
+0.4.1
+```
+
+The Helm template was updated so the API version derives from the backend image tag:
+
+```yaml
+value: {{ .Values.backend.image.tag | quote }}
+```
+
+The `/api/status` endpoint now reports:
+
+```text
+version: 0.4.1
+```
+
+matching the deployed backend artifact.
+
+### Final Validation
+
+After Helm revision 6:
+
+```text
+Frontend replicas: 3/3 Ready
+Backend replicas: 2/2 Ready
+PostgreSQL: Ready
+```
+
+Application validation returned:
+
+```text
+/                  -> HTTP 200
+/api/status        -> HTTP 200
+/api/products      -> HTTP 200
+/api/db-status     -> HTTP 200
+```
+
+### Lessons Learned
+
+- Successful application startup should not depend on a transiently available downstream DNS record when the dependency can be resolved at request time.
+- Runtime service discovery can reduce unnecessary container restarts caused by temporary dependency outages.
+- Container startup availability and downstream dependency availability should be treated as separate concerns.
+- Docker DNS behavior and Kubernetes DNS behavior should both be validated when networking logic is changed.
+- Kubernetes short Service names rely on Pod DNS search domains, while application-specific runtime resolvers may require fully qualified names.
+- The Downward API can expose namespace information without hardcoding deployment environments.
+- Version metadata should derive from the deployed artifact version to avoid configuration drift.
+- A successful Helm upgrade should be followed by rollout and endpoint validation.

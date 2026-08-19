@@ -1039,3 +1039,187 @@ Least-privilege NetworkPolicies must evolve when new legitimate workload identit
 A deployment Job should receive explicit access to its required dependency rather than being mislabeled as another application tier or broadening database access for the entire cluster.
 
 ---
+
+---
+
+## Frontend CrashLoopBackOff caused by backend DNS resolution during NGINX startup
+
+### Symptoms
+
+One SecureCart frontend Pod entered:
+
+```text
+CrashLoopBackOff
+```
+
+while the other frontend replicas remained healthy.
+
+The frontend Deployment reported:
+
+```text
+2/3 Ready
+```
+
+The application remained partially available because the remaining frontend replicas continued serving traffic.
+
+Previous container logs showed:
+
+```text
+host not found in upstream "securecart-backend-service"
+```
+
+NGINX exited with status code 1.
+
+Startup probes then failed with:
+
+```text
+connect: connection refused
+```
+
+because NGINX never successfully started.
+
+### Investigation
+
+The affected frontend Pod and a healthy frontend Pod were both scheduled on the same Kubernetes worker node.
+
+This reduced the likelihood that the issue was caused by a single unhealthy node.
+
+The backend Service remained present and healthy.
+
+After restarting the local Kind networking daemon and replacing the failed frontend Pod, the replacement Pod started successfully.
+
+This indicated that the immediate failure was related to temporary DNS or networking availability during frontend container startup.
+
+The frontend NGINX configuration used:
+
+```text
+securecart-backend-service:8000
+```
+
+directly as the proxy upstream.
+
+NGINX attempted to resolve the backend Service name while loading its configuration.
+
+If DNS resolution failed during this startup window, NGINX terminated instead of starting the frontend and allowing the dependency to recover later.
+
+### Initial Runtime DNS Fix
+
+The NGINX configuration was changed to use a runtime resolver discovered from:
+
+```text
+/etc/resolv.conf
+```
+
+and an NGINX variable-based upstream.
+
+The generated configuration included:
+
+```nginx
+resolver <runtime-dns-server> valid=10s ipv6=off;
+resolver_timeout 2s;
+
+set $backend_upstream "<backend-host>:8000";
+
+proxy_pass http://$backend_upstream;
+```
+
+Local Docker validation confirmed that the frontend could:
+
+```text
+Start before the backend existed
+Serve static content with HTTP 200
+Return HTTP 502 for unavailable backend requests
+Remain running with RestartCount=0
+Recover automatically after the backend later became available
+```
+
+### Kubernetes Short Service Name Issue
+
+After deploying the first runtime DNS implementation to Kubernetes, the frontend Pods remained healthy but `/api/*` requests returned:
+
+```text
+HTTP 502
+```
+
+The frontend Pod resolver configuration showed:
+
+```text
+search default.svc.cluster.local svc.cluster.local cluster.local localdomain
+nameserver 10.96.0.10
+```
+
+The backend Service and its endpoints were healthy.
+
+The generated NGINX configuration still referenced the short Service name:
+
+```text
+securecart-backend-service
+```
+
+The runtime NGINX resolver did not use the Pod search-domain behavior in the same way as ordinary system name resolution.
+
+### Resolution
+
+The frontend Deployment was updated to expose the current Pod namespace through the Downward API:
+
+```yaml
+- name: POD_NAMESPACE
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.namespace
+```
+
+The backend runtime hostname was then defined as the fully qualified Kubernetes Service DNS name:
+
+```text
+securecart-backend-service.$(POD_NAMESPACE).svc.cluster.local
+```
+
+In the default namespace, this becomes:
+
+```text
+securecart-backend-service.default.svc.cluster.local
+```
+
+Frontend image `0.3.2` includes this runtime DNS behavior.
+
+The generated NGINX configuration inside Kubernetes now contains:
+
+```text
+resolver 10.96.0.10 valid=10s ipv6=off
+securecart-backend-service.default.svc.cluster.local:8000
+```
+
+### Validation
+
+After deployment:
+
+```text
+Frontend replicas: 3/3 Ready
+Backend replicas: 2/2 Ready
+```
+
+The frontend Pods reported zero restarts.
+
+Application validation returned:
+
+```text
+/                  -> HTTP 200
+/api/status        -> HTTP 200
+/api/products      -> HTTP 200
+/api/db-status     -> HTTP 200
+```
+
+The backend status endpoint also reported the correct deployed image version:
+
+```text
+0.4.1
+```
+
+### Lesson
+
+A frontend process should not crash solely because a downstream Service name is temporarily unavailable during startup.
+
+Runtime dependency resolution reduces unnecessary container restarts and allows transient dependency failures to remain isolated to the requests that require those dependencies.
+
+When application-level DNS clients are used inside Kubernetes, validate their behavior with fully qualified Kubernetes Service names rather than assuming they consume Pod DNS search domains exactly like the system resolver.

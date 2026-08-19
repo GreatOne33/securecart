@@ -60,8 +60,16 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
 
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
             - name: BACKEND_HOST
               value: "securecart-backend-service"
+
+            - name: BACKEND_UPSTREAM_HOST
+              value: "securecart-backend-service.$(POD_NAMESPACE).svc.cluster.local"
 
             - name: BACKEND_PORT
               value: {{ .Values.backend.service.port | quote }}

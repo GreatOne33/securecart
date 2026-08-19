@@ -1760,3 +1760,134 @@ Helm changes how this architecture is packaged, configured, deployed, upgraded, 
 It does not weaken or bypass the Kubernetes security boundaries established by the underlying resources.
 
 The next architectural layer will introduce CI/CD automation that consumes the Helm chart as the deployment interface.
+
+---
+
+# Runtime Service Discovery Architecture - v1.1.1
+
+## Frontend-to-Backend DNS Resolution
+
+SecureCart uses Kubernetes DNS for frontend-to-backend service discovery.
+
+The frontend NGINX reverse proxy routes `/api/*` requests to the backend Service:
+
+```text
+Frontend Pod
+     |
+     | /api/*
+     v
+NGINX Reverse Proxy
+     |
+     | Runtime DNS Resolution
+     v
+CoreDNS
+     |
+     | securecart-backend-service.<namespace>.svc.cluster.local
+     v
+Backend ClusterIP Service
+     |
+     +-------------------+
+     |                   |
+     v                   v
+Backend Pod          Backend Pod
+```
+
+The frontend does not require the backend Service hostname to resolve successfully during NGINX process startup.
+
+Instead, NGINX performs backend resolution at request time using the DNS resolver provided to the Pod through `/etc/resolv.conf`.
+
+The frontend entrypoint discovers that resolver dynamically and injects it into the generated NGINX configuration:
+
+```nginx
+resolver ${DNS_RESOLVER} valid=10s ipv6=off;
+resolver_timeout 2s;
+```
+
+The backend upstream is stored in an NGINX variable:
+
+```nginx
+set $backend_upstream "${BACKEND_UPSTREAM_HOST}:${BACKEND_PORT}";
+```
+
+API requests then use:
+
+```nginx
+proxy_pass http://$backend_upstream;
+```
+
+This separates frontend process availability from temporary backend DNS availability.
+
+A temporary failure to resolve the backend can therefore cause an individual API request to fail without forcing the frontend container itself to terminate.
+
+## Namespace-Aware Service Discovery
+
+The frontend Deployment obtains its namespace from Kubernetes through the Downward API:
+
+```yaml
+- name: POD_NAMESPACE
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.namespace
+```
+
+Helm configures the backend upstream using the fully qualified Kubernetes Service DNS name:
+
+```text
+securecart-backend-service.$(POD_NAMESPACE).svc.cluster.local
+```
+
+For a SecureCart release in the `default` namespace, the runtime value becomes:
+
+```text
+securecart-backend-service.default.svc.cluster.local
+```
+
+Using the Service FQDN avoids depending on DNS search-domain expansion when NGINX performs runtime DNS queries directly.
+
+## Failure Isolation
+
+The resulting dependency model is:
+
+```text
+Backend DNS available
+        |
+        v
+/api/* request succeeds
+
+Backend DNS temporarily unavailable
+        |
+        v
+/api/* request may return 502
+        |
+        v
+Frontend NGINX remains running
+        |
+        v
+DNS/backend becomes available
+        |
+        v
+Subsequent request succeeds
+```
+
+This design prevents a transient backend DNS failure from unnecessarily turning into a frontend `CrashLoopBackOff`.
+
+The frontend remains independently capable of serving static content while backend connectivity is unavailable.
+
+## Deployment Version Consistency
+
+Helm also derives backend application version metadata from the deployed backend image tag:
+
+```yaml
+- name: API_VERSION
+  value: {{ .Values.backend.image.tag | quote }}
+```
+
+This establishes the backend image tag as the source of truth for both:
+
+```text
+Container artifact version
+        +
+Application-reported version
+```
+
+and prevents configuration drift between the deployed image and the `/api/status` response.

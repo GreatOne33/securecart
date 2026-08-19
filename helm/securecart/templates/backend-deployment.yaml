@@ -45,7 +45,7 @@ spec:
               value: "SecureCart Backend"
 
             - name: API_VERSION
-              value: "0.1.0"
+              value: {{ .Values.backend.image.tag | quote }}
 
             - name: ENVIRONMENT
               value: {{ .Values.global.environment | quote }}
