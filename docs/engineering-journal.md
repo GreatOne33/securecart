@@ -3019,3 +3019,320 @@ Application validation returned:
 - The Downward API can expose namespace information without hardcoding deployment environments.
 - Version metadata should derive from the deployed artifact version to avoid configuration drift.
 - A successful Helm upgrade should be followed by rollout and endpoint validation.
+
+---
+
+# Engineering Journal - v1.2.0
+
+## Initial Continuous Integration with GitHub Actions
+
+SecureCart introduced its first automated Continuous Integration workflow using GitHub Actions.
+
+Before this milestone, application and infrastructure validation was performed manually during development.
+
+The engineering workflow required manually executing operations such as:
+
+```text
+Backend dependency installation
+Python syntax validation
+Container image builds
+Helm linting
+Helm manifest rendering
+```
+
+Although these checks were already part of the development process, they depended on the engineer remembering to execute them consistently.
+
+The initial CI implementation moves these checks into repository-controlled automation.
+
+The workflow is stored at:
+
+```text
+.github/workflows/ci.yaml
+```
+
+and executes automatically for:
+
+```text
+Pushes to main
+Pull requests targeting main
+```
+
+### Initial CI Architecture
+
+The first SecureCart CI workflow contains three independent validation jobs:
+
+```text
+Git Push / Pull Request
+           |
+           v
+     GitHub Actions
+           |
+     +-----+------------------+
+     |                        |
+     v                        v
+Backend Validation     Container Build Validation
+     |                        |
+     |                        +--> Backend image build
+     |                        |
+     |                        +--> Frontend image build
+     |
+     +--> Python 3.14
+     +--> Dependency installation
+     +--> Python compilation
+     +--> FastAPI import validation
+
+                +
+                |
+                v
+          Helm Validation
+                |
+                +--> Helm setup
+                +--> helm lint
+                +--> helm template
+                +--> rendered manifest verification
+```
+
+Each job executes independently on a GitHub-hosted Ubuntu runner.
+
+Separating validation responsibilities into different jobs makes failures easier to identify.
+
+A backend validation failure is distinguishable from:
+
+```text
+Container build failure
+Helm rendering failure
+```
+
+instead of presenting the entire CI process as one large undifferentiated job.
+
+### Backend Validation
+
+The backend validation job uses Python 3.14 to match the Python version used by the backend container image.
+
+The workflow:
+
+```text
+Checks out the repository
+Installs Python 3.14
+Installs backend dependencies
+Compiles the Python source
+Imports the FastAPI application
+```
+
+Python compilation is performed with:
+
+```text
+python -m compileall .
+```
+
+This catches Python syntax failures before application artifacts are deployed.
+
+The FastAPI import check validates that the backend application module can be imported successfully after its dependencies are installed.
+
+This provides an initial application integrity check without requiring a running Kubernetes environment.
+
+### Container Build Validation
+
+The CI workflow independently builds both application containers:
+
+```text
+securecart-backend:ci
+securecart-frontend:ci
+```
+
+The purpose of this stage is not yet to publish container images.
+
+Instead, it verifies that changes to:
+
+```text
+Dockerfiles
+Application source
+Container entrypoints
+Runtime templates
+Dependencies
+```
+
+still produce valid container artifacts.
+
+This establishes an important separation between:
+
+```text
+Build validation
+        |
+        v
+Artifact publication
+```
+
+A successful build does not automatically authorize an image for publication.
+
+Artifact publishing will be introduced separately as the pipeline matures.
+
+### Helm Validation
+
+The Helm validation job installs Helm and validates the SecureCart chart using:
+
+```text
+helm lint helm/securecart
+```
+
+The chart is then rendered with:
+
+```text
+helm template securecart helm/securecart
+```
+
+The rendered Kubernetes manifests are written to a temporary file and verified to contain output.
+
+This moves Helm validation from a manual pre-deployment operation into automated CI.
+
+The workflow therefore catches chart syntax or rendering failures before a future deployment stage is allowed to consume the chart.
+
+### Least-Privilege Workflow Permissions
+
+The workflow explicitly configures:
+
+```yaml
+permissions:
+  contents: read
+```
+
+The initial CI workflow requires repository read access but does not require permission to:
+
+```text
+Write repository contents
+Publish packages
+Modify deployments
+Access cloud infrastructure
+```
+
+No package publishing permission or Kubernetes deployment credential is provided.
+
+This establishes a least-privilege baseline for GitHub Actions.
+
+Future workflow stages must receive additional permissions only when their responsibilities require them.
+
+### First CI Execution
+
+The initial GitHub Actions workflow was committed and pushed to the repository.
+
+GitHub automatically triggered the SecureCart CI workflow.
+
+All three jobs completed successfully:
+
+```text
+Backend Validation          PASS
+Container Build Validation  PASS
+Helm Validation             PASS
+```
+
+The complete workflow finished successfully in approximately 27 seconds.
+
+This confirmed that:
+
+```text
+The backend dependencies install successfully
+The FastAPI application imports successfully
+Both container images build successfully
+The Helm chart passes lint validation
+The Helm chart renders Kubernetes manifests successfully
+```
+
+### CI as an Engineering Gate
+
+Before GitHub Actions:
+
+```text
+Developer
+   |
+   +--> Validate backend
+   +--> Build containers
+   +--> Validate Helm
+   |
+   v
+Push changes
+```
+
+After the initial CI implementation:
+
+```text
+Developer
+   |
+   v
+Git Push / Pull Request
+   |
+   v
+GitHub Actions
+   |
+   +--> Backend validation
+   +--> Container validation
+   +--> Helm validation
+   |
+   v
+Automated CI result
+```
+
+The repository now performs repeatable validation independently of the developer workstation.
+
+This is the first step toward making the Git repository and CI system part of the application's control plane for software delivery.
+
+### Current CI Security Boundary
+
+The initial workflow deliberately does not:
+
+```text
+Publish container images
+Deploy to Kubernetes
+Modify Helm releases
+Access AWS
+Use long-lived cloud credentials
+Perform automated production changes
+```
+
+The first milestone is intentionally limited to validation.
+
+This creates a controlled progression:
+
+```text
+Validation
+    |
+    v
+Security Gates
+    |
+    v
+Artifact Publication
+    |
+    v
+Deployment Automation
+```
+
+Security and deployment capabilities will be added incrementally rather than granting broad workflow permissions from the beginning.
+
+### Planned CI Security Expansion
+
+The next CI increment will introduce automated security validation.
+
+Potential controls include:
+
+```text
+Dependency vulnerability scanning
+Container image vulnerability scanning
+Secret detection
+Kubernetes / Helm configuration scanning
+Software Bill of Materials generation
+Artifact provenance
+```
+
+These controls will be evaluated based on the security problem they solve rather than added only to increase the number of tools in the pipeline.
+
+### Lessons Learned
+
+- Continuous Integration turns repeatable manual validation into repository-controlled automation.
+- A CI pipeline should begin with clear engineering gates before adding deployment privileges.
+- Independent jobs make failures easier to isolate and troubleshoot.
+- CI should validate artifacts before publishing them.
+- GitHub Actions workflow permissions should follow least privilege.
+- A validation workflow does not need package-write, deployment, or cloud permissions.
+- Matching CI runtime versions with application runtime versions reduces environmental differences.
+- Container build success can be validated separately from registry publication.
+- Helm linting and rendering can be automated before any Kubernetes deployment takes place.
+- CI/CD should be built incrementally so each security boundary remains understandable.

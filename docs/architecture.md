@@ -1891,3 +1891,261 @@ Application-reported version
 ```
 
 and prevents configuration drift between the deployed image and the `/api/status` response.
+
+---
+
+# Continuous Integration Architecture - v1.2.0
+
+## GitHub Actions Validation Layer
+
+SecureCart now includes a repository-controlled Continuous Integration layer implemented with GitHub Actions.
+
+The CI workflow is triggered by:
+
+```text
+Pushes to main
+Pull requests targeting main
+```
+
+The workflow is stored at:
+
+```text
+.github/workflows/ci.yaml
+```
+
+and provides automated validation before future artifact publication or deployment stages are introduced.
+
+## CI Job Architecture
+
+The workflow contains three independent jobs:
+
+```text
+Git Push / Pull Request
+          |
+          v
+    GitHub Actions
+          |
+    +-----+----------------------+
+    |                            |
+    v                            v
+Backend Validation       Container Build Validation
+    |                            |
+    |                            +--> Build backend image
+    |                            |
+    |                            +--> Build frontend image
+    |
+    +--> Python 3.14
+    +--> Install dependencies
+    +--> Compile source
+    +--> Import FastAPI app
+
+                 +
+                 |
+                 v
+           Helm Validation
+                 |
+                 +--> Install Helm
+                 +--> helm lint
+                 +--> helm template
+                 +--> Verify rendered output
+```
+
+Each job runs on a separate GitHub-hosted Ubuntu runner.
+
+This separation allows validation failures to be isolated by responsibility.
+
+## Backend Validation Boundary
+
+The backend validation job verifies that the FastAPI application remains structurally valid before container publication or deployment.
+
+The job:
+
+```text
+Checks out the repository
+Installs Python 3.14
+Installs backend dependencies
+Compiles Python source
+Imports the FastAPI application module
+```
+
+Python 3.14 matches the version used by the backend container image.
+
+This reduces differences between:
+
+```text
+CI validation environment
+        |
+        v
+Backend runtime environment
+```
+
+The current backend CI stage validates syntax and application importability.
+
+It does not yet execute automated application tests.
+
+## Container Build Validation Boundary
+
+The container validation job builds both SecureCart application images:
+
+```text
+Backend container
+Frontend container
+```
+
+The generated CI images are local runner artifacts only.
+
+They are not published to GitHub Container Registry.
+
+This establishes a boundary between:
+
+```text
+Can this artifact be built?
+          |
+          v
+Should this artifact be published?
+```
+
+Future artifact publishing will occur only after additional validation and security controls have passed.
+
+## Helm Validation Boundary
+
+The Helm validation job verifies the Kubernetes deployment package independently of a running Kubernetes cluster.
+
+The workflow performs:
+
+```text
+helm lint
+helm template
+rendered manifest verification
+```
+
+This validates the chart's structure and rendering behavior before a future deployment stage attempts to modify a Kubernetes environment.
+
+The CI layer therefore becomes an automated pre-deployment gate for Helm changes.
+
+## Least-Privilege Workflow Identity
+
+The workflow explicitly grants:
+
+```yaml
+permissions:
+  contents: read
+```
+
+The GitHub Actions workflow identity can read repository contents but cannot currently:
+
+```text
+Publish packages
+Modify repository contents
+Create deployments
+Access AWS
+Modify Kubernetes resources
+```
+
+This creates a narrow trust boundary around the CI workflow.
+
+Additional permissions will be introduced only when later pipeline stages require them.
+
+## Current Delivery Trust Flow
+
+The current SecureCart delivery path is:
+
+```text
+Developer
+    |
+    v
+Git Commit
+    |
+    v
+Git Push / Pull Request
+    |
+    v
+GitHub Actions CI
+    |
+    +--> Backend validation
+    |
+    +--> Container build validation
+    |
+    +--> Helm validation
+    |
+    v
+CI Result
+```
+
+At this stage:
+
+```text
+CI success
+    !=
+Artifact publication
+
+CI success
+    !=
+Kubernetes deployment
+```
+
+A successful CI run currently means only that the change passed the defined validation gates.
+
+This separation is intentional.
+
+## Planned Secure Delivery Architecture
+
+The SecureCart delivery model will expand incrementally:
+
+```text
+Source Change
+     |
+     v
+CI Validation
+     |
+     v
+Security Validation
+     |
+     v
+Trusted Artifact Build
+     |
+     v
+Container Registry
+     |
+     v
+Controlled Helm Deployment
+     |
+     v
+Rollout Validation
+     |
+     v
+Application Health Validation
+```
+
+Future pipeline layers may introduce:
+
+```text
+Dependency vulnerability scanning
+Container vulnerability scanning
+Secret detection
+Kubernetes and Helm configuration scanning
+Software Bill of Materials generation
+Artifact provenance
+Versioned GHCR publishing
+Automated Helm deployment
+Post-deployment health validation
+```
+
+Each capability will extend the delivery trust chain rather than replacing the existing validation stages.
+
+## Current CI Security Boundary
+
+The initial CI implementation deliberately has no direct access to:
+
+```text
+GitHub Container Registry write operations
+Kubernetes credentials
+Cloud provider credentials
+Production environments
+```
+
+This limits the impact of a compromised or misconfigured CI workflow.
+
+The current architecture treats validation and deployment as separate security boundaries.
+
+That separation will remain important as SecureCart progresses toward automated cloud deployment.

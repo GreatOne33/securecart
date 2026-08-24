@@ -74,9 +74,16 @@
 - [x] Harden production-style frontend and backend container images
 - [x] Publish versioned application images to GitHub Container Registry
 - [x] Package Kubernetes application with Helm and validate release lifecycle
-- [ ] Configure GitHub Actions
-- [ ] Automated testing
-- [ ] Automated Kubernetes deployments
+- [x] Configure GitHub Actions continuous integration
+- [x] Add backend syntax and application import validation
+- [x] Add frontend and backend container build validation
+- [x] Add Helm lint and manifest rendering validation
+- [x] Apply least-privilege GitHub Actions workflow permissions
+- [ ] Add automated application testing
+- [ ] Add CI security scanning and policy gates
+- [ ] Add trusted container artifact publishing
+- [ ] Automate Kubernetes deployments
+- [ ] Add post-deployment validation
 
 ---
 

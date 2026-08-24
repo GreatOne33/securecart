@@ -75,10 +75,11 @@ Persistent Storage
 
 NetworkPolicies restrict communication between application tiers so that only explicitly authorized workloads can communicate with the frontend, backend, and database.
 
-Next milestone:
+Current milestone:
 
-- Configure GitHub Actions
-- Introduce automated testing
+- Expand GitHub Actions continuous integration
+- Introduce automated testing and security validation
+- Add trusted container artifact publishing
 - Automate Helm-based Kubernetes deployments
 
 SecureCart is an ongoing engineering project designed to simulate the work of a Cloud Infrastructure / Platform Engineer. The project follows production-style engineering practices including Infrastructure as Code, Git-based workflows, documentation, containerization, application networking, persistent storage, and Kubernetes deployments.
@@ -90,7 +91,7 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - Build a production-style Kubernetes platform locally using Kind
 - Deploy a multi-tier e-commerce application
 - Package applications using Helm
-- Automate deployments with GitHub Actions
+- Build secure CI/CD automation with GitHub Actions
 - Provision AWS infrastructure using Terraform
 - Deploy to Amazon EKS
 - Apply Cloud Security best practices
@@ -307,11 +308,21 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] Validate Helm revision history
 - [x] Validate Helm rollback behavior
 
+### Continuous Integration
+
+- [x] Configure GitHub Actions
+- [x] Validate backend Python syntax and application imports
+- [x] Validate frontend and backend container builds
+- [x] Validate Helm charts and rendered Kubernetes manifests
+- [x] Apply least-privilege workflow permissions
+
 #### Next
 
-- [ ] Configure GitHub Actions
-- [ ] Automated testing
-- [ ] Automated Helm deployments
+- [ ] Add automated application tests
+- [ ] Add CI security gates
+- [ ] Add trusted container artifact publishing
+- [ ] Automate Helm-based Kubernetes deployments
+- [ ] Add post-deployment validation
 
 ---
 
@@ -446,11 +457,12 @@ Network Boundaries:
 
 ### DevOps
 
-- GitHub Container Registry
-- Versioned container images
-- Git-based workflows
-- GitHub Actions *(planned)*
-- CI/CD automation *(planned)*
+- GitHub Actions
+- Continuous integration
+- Automated backend validation
+- Automated container build validation
+- Automated Helm validation
+- CI/CD automation *(in progress)*
 
 ### Version Control
 
@@ -1075,9 +1087,11 @@ Project documentation is maintained throughout development.
 
 ## 🚀 Current Focus
 
-**Current milestone:** CI/CD automation with GitHub Actions
+**Current milestone:** Secure CI/CD automation with GitHub Actions
 
 SecureCart has completed its initial Helm packaging and release-management milestone.
+
+SecureCart now also includes an initial GitHub Actions continuous integration pipeline. Every push and pull request to `main` automatically validates the backend application, builds both application container images, and validates the Helm deployment package before changes progress further through the delivery lifecycle.
 
 The application now includes:
 
@@ -1096,6 +1110,11 @@ The application now includes:
 - Helm release ownership and revision history
 - Validated Helm upgrade and rollback workflows
 - End-to-end HTTPS application validation
+- GitHub Actions continuous integration
+- Automated backend syntax and application import validation
+- Automated frontend and backend container build validation
+- Automated Helm linting and manifest rendering
+- Least-privilege GitHub Actions workflow permissions
 
 The current deployment lifecycle is:
 
@@ -1145,9 +1164,11 @@ helm rollback
 
 Upcoming work:
 
-- Configure GitHub Actions
-- Introduce automated testing
+- Expand CI with automated application testing
+- Introduce security scanning and policy gates
+- Add trusted container artifact publishing
 - Automate Helm-based Kubernetes deployments
+- Add post-deployment validation
 
 **Long-term goal:** Deploy SecureCart to Amazon EKS using Terraform, Helm, and GitHub Actions.
 
