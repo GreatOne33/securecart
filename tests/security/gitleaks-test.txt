@@ -1,0 +1,4 @@
+# SecureCart CI Secret Detection Recovery Test
+# No credential material is present in this fixture.
+
+SECURECART_SECURITY_GATE_TEST=clean
