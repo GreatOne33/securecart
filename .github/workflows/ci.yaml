@@ -89,3 +89,18 @@ jobs:
         run: |
           test -s /tmp/securecart-rendered.yaml
           grep '^kind:' /tmp/securecart-rendered.yaml
+
+  secret-detection:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository with history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan repository for secrets
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
