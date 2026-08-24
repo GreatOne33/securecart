@@ -79,8 +79,13 @@
 - [x] Add frontend and backend container build validation
 - [x] Add Helm lint and manifest rendering validation
 - [x] Apply least-privilege GitHub Actions workflow permissions
+- [x] Add Gitleaks secret detection security gate
+- [x] Validate secret detection with a controlled known-positive test
+- [x] Validate CI recovery after removing synthetic credential history
 - [ ] Add automated application testing
-- [ ] Add CI security scanning and policy gates
+- [ ] Add dependency vulnerability scanning
+- [ ] Add container image vulnerability scanning
+- [ ] Add Kubernetes and Helm configuration scanning
 - [ ] Add trusted container artifact publishing
 - [ ] Automate Kubernetes deployments
 - [ ] Add post-deployment validation

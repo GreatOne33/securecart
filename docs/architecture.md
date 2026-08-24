@@ -1917,7 +1917,7 @@ and provides automated validation before future artifact publication or deployme
 
 ## CI Job Architecture
 
-The workflow contains three independent jobs:
+The workflow contains four independent jobs:
 
 ```text
 Git Push / Pull Request
@@ -1925,29 +1925,26 @@ Git Push / Pull Request
           v
     GitHub Actions
           |
-    +-----+----------------------+
-    |                            |
-    v                            v
-Backend Validation       Container Build Validation
-    |                            |
-    |                            +--> Build backend image
-    |                            |
-    |                            +--> Build frontend image
-    |
-    +--> Python 3.14
-    +--> Install dependencies
+    +-----+----------------------+------------------+
+    |                            |                  |
+    v                            v                  v
+Backend Validation       Container Build       Helm Validation
+    |                    Validation                 |
+    |                         |                     +--> helm lint
+    +--> Python 3.14          +--> Backend image    +--> helm template
+    +--> Dependencies         +--> Frontend image   +--> Verify output
     +--> Compile source
     +--> Import FastAPI app
 
-                 +
-                 |
-                 v
-           Helm Validation
-                 |
-                 +--> Install Helm
-                 +--> helm lint
-                 +--> helm template
-                 +--> Verify rendered output
+                         +
+                         |
+                         v
+                  Secret Detection
+                         |
+                         +--> Full Git history
+                         +--> Gitleaks scan
+                         +--> Fail on detected secret
+
 ```
 
 Each job runs on a separate GitHub-hosted Ubuntu runner.
@@ -2023,6 +2020,58 @@ This validates the chart's structure and rendering behavior before a future depl
 
 The CI layer therefore becomes an automated pre-deployment gate for Helm changes.
 
+## Secret Detection Boundary
+
+The CI workflow now includes a dedicated secret-detection security gate implemented with Gitleaks.
+
+The job checks out the repository with complete Git history:
+
+```yaml
+- name: Checkout repository with history
+  uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+```
+
+and scans the repository for credential material before the delivery workflow can be considered successful.
+
+The security boundary is:
+
+```text
+Repository History
+       |
+       v
+GitHub Actions
+       |
+       v
+Secret Detection
+       |
+       v
+    Gitleaks
+       |
+   +---+---+
+   |       |
+ Clean   Secret
+   |     Detected
+   v       |
+ Pass      v
+          Fail
+```
+
+Full-history checkout is intentional.
+
+A credential removed from the current working tree may remain reachable through an earlier Git commit. Secret detection therefore evaluates repository history rather than treating only the latest file state as the security boundary.
+
+The control was validated with a temporary pull-request branch containing a synthetic known-positive AWS access-token pattern.
+
+Gitleaks detected the synthetic credential and failed the CI workflow while the backend, container-build, and Helm validation jobs continued to pass.
+
+After the synthetic credential was removed from the branch's reachable history, the same CI workflow returned to a successful state.
+
+The test branch was never merged into `main` and was deleted after validation.
+
+This demonstrated both enforcement and recovery behavior for the security gate.
+
 ## Least-Privilege Workflow Identity
 
 The workflow explicitly grants:
@@ -2066,10 +2115,16 @@ GitHub Actions CI
     |
     +--> Container build validation
     |
-    +--> Helm validation
+        +--> Helm validation
+    |
+    +--> Secret detection
+    |        |
+    |        +--> Git history
+    |        +--> Gitleaks
     |
     v
 CI Result
+
 ```
 
 At this stage:
@@ -2122,7 +2177,6 @@ Future pipeline layers may introduce:
 ```text
 Dependency vulnerability scanning
 Container vulnerability scanning
-Secret detection
 Kubernetes and Helm configuration scanning
 Software Bill of Materials generation
 Artifact provenance

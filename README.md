@@ -315,11 +315,14 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] Validate frontend and backend container builds
 - [x] Validate Helm charts and rendered Kubernetes manifests
 - [x] Apply least-privilege workflow permissions
+- [x] Gitleaks secret detection
+- [x] Full-history secret scanning
+- [x] Controlled secret-detection gate validation
 
 #### Next
 
 - [ ] Add automated application tests
-- [ ] Add CI security gates
+- [ ] Expand CI security gates
 - [ ] Add trusted container artifact publishing
 - [ ] Automate Helm-based Kubernetes deployments
 - [ ] Add post-deployment validation
@@ -457,12 +460,13 @@ Network Boundaries:
 
 ### DevOps
 
+- GitHub Container Registry
+- Versioned container images
+- Git-based workflows
 - GitHub Actions
 - Continuous integration
-- Automated backend validation
-- Automated container build validation
-- Automated Helm validation
-- CI/CD automation *(in progress)*
+- Gitleaks secret detection
+- CI security gates
 
 ### Version Control
 
@@ -1165,10 +1169,9 @@ helm rollback
 Upcoming work:
 
 - Expand CI with automated application testing
-- Introduce security scanning and policy gates
-- Add trusted container artifact publishing
-- Automate Helm-based Kubernetes deployments
-- Add post-deployment validation
+- Add dependency vulnerability scanning
+- Add container image vulnerability scanning
+- Add Kubernetes and Helm configuration scanning
 
 **Long-term goal:** Deploy SecureCart to Amazon EKS using Terraform, Helm, and GitHub Actions.
 

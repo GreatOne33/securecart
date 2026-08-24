@@ -3336,3 +3336,303 @@ These controls will be evaluated based on the security problem they solve rather
 - Container build success can be validated separately from registry publication.
 - Helm linting and rendering can be automated before any Kubernetes deployment takes place.
 - CI/CD should be built incrementally so each security boundary remains understandable.
+
+---
+
+## Secret Detection Security Gate
+
+After establishing the initial GitHub Actions CI pipeline, the next security control added to the delivery workflow was automated secret detection.
+
+The purpose of this control is to prevent credentials, tokens, API keys, and other sensitive values from progressing through the SecureCart delivery lifecycle if they are accidentally committed to the repository.
+
+Gitleaks was integrated into the existing GitHub Actions workflow as a dedicated `Secret Detection` job.
+
+The workflow checks out the complete Git history:
+
+```yaml
+- name: Checkout repository with history
+  uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+```
+
+Gitleaks then scans the repository:
+```YAML
+- name: Scan repository for secrets
+  uses: gitleaks/gitleaks-action@v3
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+The existing workflow-level permission model remained:
+```YAML
+permissions:
+  contents: read
+```
+
+This preserved the least-privilege design of the initial CI implementation while adding a new security validation capability.
+
+### Why Secret Detection Was Added
+
+SecureCart already uses several types of configuration that could eventually involve sensitive information, including:
+
+- database credentials
+- Kubernetes Secrets
+- TLS configuration
+- container registry authentication
+- future AWS credentials and identities
+- future deployment credentials
+
+The presence of Kubernetes Secrets does not prevent a developer from accidentally committing a plaintext credential to Git.
+
+Once a credential enters Git history, deleting it from the current version of a file does not necessarily remove it from previous commits.
+
+Secret detection therefore belongs early in the delivery lifecycle.
+
+The intended trust flow became:
+```text
+Developer Change
+      |
+      v
+Git Commit / Pull Request
+      |
+      v
+GitHub Actions
+      |
+      +--> Backend Validation
+      |
+      +--> Container Build Validation
+      |
+      +--> Helm Validation
+      |
+      +--> Secret Detection
+               |
+               v
+          Gitleaks Scan
+               |
+        +------+------+
+        |             |
+     Clean          Secret
+        |          Detected
+        v             |
+      Pass            v
+                    Fail
+
+```
+
+A detected secret should cause the CI workflow to fail rather than allowing the change to silently progress.
+
+### Validating the Security Control
+
+Adding a security scanner to CI does not by itself prove that the control is effective.
+
+A controlled test was therefore performed using a temporary Git branch:
+```text
+test/secret-detection-gate
+```
+
+A synthetic credential fixture was intentionally committed to the branch and submitted through a pull request.
+
+The test was designed so that:
+
+- normal backend validation should pass
+- container build validation should pass
+- Helm validation should pass
+- secret detection should fail
+- the test branch would not be merged into main
+
+This isolated the experiment from the production branch while exercising the same CI workflow used by normal pull requests.
+
+### Initial Test Did Not Trigger Detection
+
+The first synthetic credential used for the experiment did not cause Gitleaks to fail.
+
+The CI workflow completed successfully even though the test fixture was intended to resemble a credential.
+
+This demonstrated an important distinction:
+```text
+Scanner executed successfully
+            !=
+Security control proven effective
+```
+
+A security scanner detects patterns according to its rules and detection logic. An arbitrary value that looks suspicious to a human may not satisfy a scanner's detection rule.
+
+The test fixture was therefore changed to a known-positive AWS access-token pattern specifically intended to exercise the Gitleaks rule.
+
+### Known-Positive Detection Test
+
+After the fixture was changed, the pull request CI workflow was executed again.
+
+This time:
+```text
+Backend Validation          PASS
+Container Build Validation  PASS
+Helm Validation             PASS
+Secret Detection            FAIL
+
+```
+
+Gitleaks identified the synthetic value using the rule:
+```text
+aws-access-token
+```
+
+The overall GitHub Actions workflow correctly entered a failed state.
+
+This was the desired result.
+
+The failure demonstrated that secret detection was functioning as an actual CI security gate rather than merely running as an informational scanner.
+
+### Git History Investigation
+
+After proving detection, the synthetic credential was removed from the current test file.
+
+However, because the Gitleaks job checks out the repository with:
+```YAML
+fetch-depth: 0
+```
+
+the scanner had access to the branch's Git history.
+
+This exposed an important Git security property:
+```text
+Deleting a secret from the current file
+does not automatically delete the secret
+from Git history.
+```
+
+A credential can remain reachable through an earlier commit even when it no longer appears in the working tree.
+
+This behavior is particularly important for real credential incidents because simply creating another commit that deletes the credential may not be sufficient remediation.
+
+### Controlled History Remediation
+
+Because the credential was synthetic and existed only on an isolated test branch, the experimental branch history could be safely cleaned without affecting main.
+
+The test history containing the known-positive fixture was removed from the reachable branch state.
+
+The CI workflow was then executed again.
+
+The final result was:
+```text
+Backend Validation          PASS
+Container Build Validation  PASS
+Helm Validation             PASS
+Secret Detection            PASS
+```
+
+Gitleaks reported:
+```text
+No leaks detected
+```
+
+The complete validation lifecycle was therefore:
+```text
+Clean Repository
+      |
+      v
+Secret Detection Passes
+      |
+      v
+Introduce Synthetic Credential
+      |
+      v
+Gitleaks Detects AWS Token
+      |
+      v
+CI Workflow Fails
+      |
+      v
+Remove Credential From Reachable History
+      |
+      v
+Run CI Again
+      |
+      v
+Secret Detection Passes
+
+```
+
+### Test Branch Cleanup
+
+The synthetic credential was never merged into main.
+
+After successful validation, the pull request was closed and the disposable test branch was deleted both locally and from the remote repository.
+
+The production branch retained only the actual CI security control.
+
+This kept the test artifact and its intentionally contaminated history outside the SecureCart main branch.
+
+### Current CI Security Gates
+
+SecureCart's CI workflow now contains four independent validation jobs:
+```text
+SecureCart CI
+│
+├── Backend Validation
+│   ├── Install dependencies
+│   ├── Compile Python source
+│   └── Validate FastAPI import
+│
+├── Container Build Validation
+│   ├── Build backend image
+│   └── Build frontend image
+│
+├── Helm Validation
+│   ├── helm lint
+│   ├── helm template
+│   └── Verify rendered manifests
+│
+└── Secret Detection
+    ├── Checkout Git history
+    └── Scan with Gitleaks
+
+```
+
+This expands CI from application and deployment-package validation into the first dedicated SecureCart CI security gate.
+
+### Security Boundary
+
+The current secret-detection control reduces the risk of accidentally allowing credential material to progress through the Git-based delivery workflow.
+
+It does not eliminate the need for proper credential management.
+
+Future production infrastructure should still use mechanisms such as:
+
+- short-lived identities
+- least-privilege IAM roles
+- GitHub Actions OIDC federation
+- Kubernetes Secret management
+- credential rotation
+- centralized secret-management services
+
+If a real credential is committed, removing the value from Git history is only part of remediation. The credential should also be considered exposed and rotated or revoked.
+
+### Lessons Learned
+- A security scanner running successfully does not prove that its detection rules are effective.
+- Security controls should be tested with known-positive fixtures when it is safe to do so.
+- CI security gates should fail the delivery workflow when they detect prohibited conditions.
+- Git history is part of the security boundary, not only the current working tree.
+- Deleting sensitive data from the latest version of a file does not necessarily remove it from previous commits.
+- Full-history scanning provides stronger visibility into credentials that may have existed earlier in repository history.
+- Synthetic security tests should be isolated from production branches.
+- Temporary security-test artifacts should be removed after the control has been validated.
+- Least-privilege workflow permissions can be preserved while incrementally adding CI security controls.
+- Security tooling should be validated by observed behavior rather than assumed to work because it was successfully installed.
+
+### Next Step
+
+Secret detection is the first dedicated security gate in the SecureCart CI pipeline.
+
+The next stage of the secure delivery pipeline will continue expanding automated security validation while preserving the incremental design of the CI architecture.
+
+Planned controls include:
+
+- dependency vulnerability scanning
+- container image vulnerability scanning
+- Kubernetes and Helm configuration scanning
+- additional policy gates
+- trusted container artifact publishing
+
+Each control will be introduced based on the specific risk it addresses and validated before additional deployment privileges are added to the workflow.
