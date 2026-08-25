@@ -3636,3 +3636,235 @@ Planned controls include:
 - trusted container artifact publishing
 
 Each control will be introduced based on the specific risk it addresses and validated before additional deployment privileges are added to the workflow.
+
+---
+
+## Dependency Vulnerability Security Gate
+
+SecureCart added a dependency vulnerability scanning gate to the GitHub Actions CI pipeline using `pip-audit`.
+
+The purpose of this control is to identify known vulnerabilities in Python dependencies before changes are allowed to progress through the delivery workflow.
+
+The backend currently manages Python dependencies through:
+
+```text
+app/backend/requirements.txt
+```
+
+The CI workflow now includes a dedicated job:
+```text
+Dependency Vulnerability Scan
+```
+
+The job:
+```text
+Checks out the repository
+Installs Python 3.14
+Installs pip-audit
+Audits app/backend/requirements.txt
+Fails CI when known vulnerabilities are detected
+```
+
+The security flow is:
+```text
+Python Dependencies
+       |
+       v
+requirements.txt
+       |
+       v
+GitHub Actions
+       |
+       v
+pip-audit
+       |
+   +---+---+
+   |       |
+ Clean   Known
+   |   Vulnerability
+   v       |
+ Pass      v
+          Fail
+
+```
+
+### Clean Baseline Validation
+
+The dependency scanner was first executed against the existing SecureCart backend dependency set:
+```text
+fastapi
+uvicorn
+psycopg
+alembic
+```
+
+The initial dependency vulnerability scan completed successfully.
+
+This established the expected clean baseline before testing the gate with a deliberately vulnerable dependency.
+
+### Controlled Vulnerability Test
+
+A temporary branch was created:
+```text
+test/dependency-vulnerability-gate
+```
+
+A deliberately vulnerable version of urllib3 was added to the backend dependency file:
+```text
+urllib3==1.26.5
+```
+
+The branch was submitted through a pull request without being merged into main.
+
+The expected validation behavior was:
+```text
+Backend Validation              PASS
+Container Build Validation      PASS
+Helm Validation                 PASS
+Secret Detection                PASS
+Dependency Vulnerability Scan   FAIL
+```
+
+The CI workflow behaved exactly as expected.
+
+### Vulnerability Detection
+
+pip-audit detected:
+```text
+10 known vulnerabilities in 1 package
+```
+
+The vulnerable package was:
+```text
+urllib3 1.26.5
+```
+
+The audit output identified multiple vulnerability advisories and recommended fixed versions.
+
+The scanner exited with:
+```text
+exit code 1
+```
+
+GitHub Actions interpreted the non-zero exit code as a failed job, causing the pull-request CI workflow to fail.
+
+This demonstrated that the dependency scan functions as a blocking security gate rather than an informational report.
+
+### Security Gate Isolation
+
+During the controlled failure:
+```text
+Backend Validation              PASS
+Container Build Validation      PASS
+Helm Validation                 PASS
+Secret Detection                PASS
+Dependency Vulnerability Scan   FAIL
+```
+
+This demonstrated the benefit of separating CI responsibilities into independent jobs.
+
+The application still compiled.
+
+The container images still built.
+
+The Helm chart still rendered.
+
+No secret material was detected.
+
+The change was rejected specifically because the dependency supply chain contained a known vulnerable package.
+
+### Remediation Validation
+
+The deliberately vulnerable dependency was removed from the test branch.
+
+The legitimate dependency file was restored from origin/main.
+
+A remediation commit was pushed to the same pull request.
+
+GitHub Actions automatically reran all validation jobs.
+
+The final result was:
+```text
+Backend Validation              PASS
+Container Build Validation      PASS
+Helm Validation                 PASS
+Secret Detection                PASS
+Dependency Vulnerability Scan   PASS
+```
+
+This demonstrated both the enforcement and recovery behavior of the dependency security gate.
+
+### Test Cleanup
+
+The dependency-vulnerability test pull request was closed without merging.
+
+The temporary branch was deleted locally and remotely.
+
+The deliberately vulnerable dependency therefore never entered the SecureCart main branch.
+
+The production branch retained only the actual pip-audit security control.
+
+### Current CI Security Model
+
+SecureCart CI now includes five independent jobs:
+```text
+SecureCart CI
+│
+├── Backend Validation
+│
+├── Container Build Validation
+│
+├── Helm Validation
+│
+├── Secret Detection
+│   └── Gitleaks
+│
+└── Dependency Vulnerability Scan
+    └── pip-audit
+```
+
+The two current dedicated security gates protect different boundaries:
+```text
+Gitleaks
+   |
+   +--> Repository and credential exposure
+
+pip-audit
+   |
+   +--> Python dependency vulnerability exposure
+```
+
+Neither control replaces the other.
+
+### Current Limitation
+
+pip-audit evaluates Python package dependencies.
+
+It does not evaluate:
+```text
+Operating-system packages inside container images
+NGINX base-image packages
+Python base-image operating-system components
+Kubernetes configuration
+Helm security configuration
+Application logic vulnerabilities
+```
+
+Container image vulnerability scanning will therefore be introduced as a separate security control.
+
+### Lessons Learned
+- Dependency installation success does not mean dependencies are safe.
+- A build can succeed while still containing known vulnerable software.
+- Dependency vulnerability scanning should be treated as a separate CI security boundary.
+- Security jobs should fail CI when the defined policy is violated.
+- Controlled known-vulnerable dependencies can safely validate enforcement when isolated to disposable test branches.
+- Remediation should be validated by rerunning the same CI controls after the vulnerable dependency is removed.
+- Security scanners should report actionable remediation information rather than only generating warnings.
+- Independent CI jobs make it easier to identify whether a failure is caused by application code, build configuration, deployment configuration, secrets, or vulnerable dependencies.
+- Dependency scanning and container scanning protect different parts of the software supply chain.
+
+### Next Step
+
+The next SecureCart CI security increment will expand software-supply-chain validation beyond Python packages.
+
+The next planned control is container image vulnerability scanning so that operating-system packages, base images, and container-layer vulnerabilities can also be evaluated before artifact publication.

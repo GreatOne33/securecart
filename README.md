@@ -318,6 +318,8 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] Gitleaks secret detection
 - [x] Full-history secret scanning
 - [x] Controlled secret-detection gate validation
+- [x] Python dependency vulnerability scanning with `pip-audit`
+- [x] Controlled vulnerable-dependency gate validation
 
 #### Next
 
@@ -467,6 +469,7 @@ Network Boundaries:
 - Continuous integration
 - Gitleaks secret detection
 - CI security gates
+- `pip-audit` dependency vulnerability scanning
 
 ### Version Control
 
@@ -1119,6 +1122,13 @@ The application now includes:
 - Automated frontend and backend container build validation
 - Automated Helm linting and manifest rendering
 - Least-privilege GitHub Actions workflow permissions
+- Gitleaks secret detection security gate
+- Full-history repository secret scanning
+- Controlled secret-detection gate validation
+- Python dependency vulnerability scanning with `pip-audit`
+- Controlled dependency vulnerability gate validation
+
+SecureCart's CI security controls have been validated through controlled failure and recovery tests. Gitleaks successfully blocked a synthetic credential pattern, and `pip-audit` blocked an isolated pull request containing `urllib3==1.26.5`, detecting 10 known vulnerabilities before the dependency was removed and the pipeline returned to a passing state.
 
 The current deployment lifecycle is:
 
@@ -1168,10 +1178,11 @@ helm rollback
 
 Upcoming work:
 
-- Expand CI with automated application testing
-- Add dependency vulnerability scanning
 - Add container image vulnerability scanning
 - Add Kubernetes and Helm configuration scanning
+- Add trusted container artifact publishing
+- Automate Helm-based Kubernetes deployments
+- Add post-deployment validation
 
 **Long-term goal:** Deploy SecureCart to Amazon EKS using Terraform, Helm, and GitHub Actions.
 

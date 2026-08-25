@@ -83,7 +83,9 @@
 - [x] Validate secret detection with a controlled known-positive test
 - [x] Validate CI recovery after removing synthetic credential history
 - [ ] Add automated application testing
-- [ ] Add dependency vulnerability scanning
+- [x] Add dependency vulnerability scanning with `pip-audit`
+- [x] Validate dependency security gate with a known-vulnerable package
+- [x] Validate CI recovery after dependency remediation
 - [ ] Add container image vulnerability scanning
 - [ ] Add Kubernetes and Helm configuration scanning
 - [ ] Add trusted container artifact publishing

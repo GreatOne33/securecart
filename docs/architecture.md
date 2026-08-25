@@ -1917,7 +1917,7 @@ and provides automated validation before future artifact publication or deployme
 
 ## CI Job Architecture
 
-The workflow contains four independent jobs:
+The workflow contains five independent jobs:
 
 ```text
 Git Push / Pull Request
@@ -1936,14 +1936,15 @@ Backend Validation       Container Build       Helm Validation
     +--> Compile source
     +--> Import FastAPI app
 
-                         +
-                         |
-                         v
-                  Secret Detection
-                         |
-                         +--> Full Git history
-                         +--> Gitleaks scan
-                         +--> Fail on detected secret
+              +----------------------+----------------------+
+              |                                             |
+              v                                             v
+       Secret Detection                       Dependency Vulnerability
+              |                                      Scan
+              +--> Git history                         |
+              +--> Gitleaks                            +--> requirements.txt
+              +--> Fail on secret                      +--> pip-audit
+                                                       +--> Fail on vulnerability
 
 ```
 
@@ -2072,6 +2073,85 @@ The test branch was never merged into `main` and was deleted after validation.
 
 This demonstrated both enforcement and recovery behavior for the security gate.
 
+## Dependency Vulnerability Boundary
+
+SecureCart CI now includes a dedicated dependency vulnerability security gate implemented with `pip-audit`.
+
+The scanner evaluates the backend Python dependency definition:
+
+```text
+app/backend/requirements.txt
+```
+
+The CI job:
+
+```text
+Checks out the repository
+Installs Python 3.14
+Installs pip-audit
+Audits backend dependencies
+Fails when known vulnerabilities are detected
+```
+
+The dependency-security boundary is:
+
+```text
+requirements.txt
+      |
+      v
+GitHub Actions
+      |
+      v
+Dependency Vulnerability Scan
+      |
+      v
+   pip-audit
+      |
+   +---+---+
+   |       |
+ Clean   Known
+   |   Vulnerability
+   v       |
+ Pass      v
+          Fail
+```
+
+The dependency scanner protects a different part of the software supply chain than secret detection.
+
+```text
+Gitleaks
+   |
+   +--> Credential and secret exposure
+
+pip-audit
+   |
+   +--> Python dependency vulnerability exposure
+```
+
+A dependency may install successfully and still contain known security vulnerabilities.
+
+For this reason, dependency installation and dependency security validation remain separate CI responsibilities.
+
+The control was validated with an isolated pull-request branch containing:
+
+```text
+urllib3==1.26.5
+```
+
+`pip-audit` identified 10 known vulnerabilities in that package and exited with code `1`.
+
+The dependency vulnerability job failed while the backend, container-build, Helm, and secret-detection jobs continued to pass.
+
+After the vulnerable dependency was removed, the same pull request reran successfully with all five CI jobs passing.
+
+The deliberately vulnerable dependency was never merged into `main`, and the disposable test branch was deleted after validation.
+
+The current dependency scanner evaluates Python package vulnerabilities only.
+
+It does not inspect operating-system packages or base-image components contained inside SecureCart container images.
+
+Container image vulnerability scanning therefore remains a separate planned security boundary.
+
 ## Least-Privilege Workflow Identity
 
 The workflow explicitly grants:
@@ -2119,6 +2199,8 @@ GitHub Actions CI
     |
     +--> Secret detection
     |        |
+             +--> Dependency vulnerability scanning
+             |
     |        +--> Git history
     |        +--> Gitleaks
     |
@@ -2175,7 +2257,6 @@ Application Health Validation
 Future pipeline layers may introduce:
 
 ```text
-Dependency vulnerability scanning
 Container vulnerability scanning
 Kubernetes and Helm configuration scanning
 Software Bill of Materials generation
