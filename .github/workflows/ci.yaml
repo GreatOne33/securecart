@@ -127,3 +127,43 @@ jobs:
         run: |
           python -m pip_audit \
             -r app/backend/requirements.txt
+
+  container-vulnerability-scan:
+    name: Container Vulnerability Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build backend container
+        run: |
+          docker build \
+            -t securecart-backend:ci \
+            app/backend
+
+      - name: Scan backend container
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: securecart-backend:ci
+          scan-type: image
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Build frontend container
+        run: |
+          docker build \
+            -t securecart-frontend:ci \
+            app/frontend
+
+      - name: Scan frontend container
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: securecart-frontend:ci
+          scan-type: image
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
