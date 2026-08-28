@@ -71,6 +71,7 @@
 - [x] Implement Alembic database schema migrations
 - [x] Add idempotent database seed automation
 - [x] Create Kubernetes database migration Job
+- [x] Integrate database migration Job with Helm pre-install and pre-upgrade hooks
 - [x] Harden production-style frontend and backend container images
 - [x] Publish versioned application images to GitHub Container Registry
 - [x] Package Kubernetes application with Helm and validate release lifecycle
@@ -86,7 +87,10 @@
 - [x] Add dependency vulnerability scanning with `pip-audit`
 - [x] Validate dependency security gate with a known-vulnerable package
 - [x] Validate CI recovery after dependency remediation
-- [ ] Add container image vulnerability scanning
+- [x] Add frontend and backend container vulnerability scanning with Trivy
+- [x] Enforce fixable HIGH and CRITICAL container vulnerability policy
+- [x] Validate container security gate with a controlled vulnerable image
+- [x] Validate CI recovery after container vulnerability remediation
 - [ ] Add Kubernetes and Helm configuration scanning
 - [ ] Add trusted container artifact publishing
 - [ ] Automate Kubernetes deployments

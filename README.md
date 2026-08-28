@@ -320,11 +320,29 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] Controlled secret-detection gate validation
 - [x] Python dependency vulnerability scanning with `pip-audit`
 - [x] Controlled vulnerable-dependency gate validation
+- [x] Frontend and backend container vulnerability scanning with Trivy
+- [x] Block fixable HIGH and CRITICAL container vulnerabilities
+- [x] Controlled container-vulnerability gate validation
+
+The current CI pipeline contains six independent validation jobs:
+
+```text
+Backend Validation
+Container Build Validation
+Helm Validation
+Secret Detection
+Dependency Vulnerability Scan
+Container Vulnerability Scan
+```
+
+Security controls are intentionally separated by boundary. Gitleaks evaluates source and Git history, `pip-audit` evaluates Python dependencies, and Trivy evaluates the built application container images.
+
+Each security gate has been deliberately tested with a controlled violation to verify that the pipeline fails closed and returns to a passing state after remediation.
 
 #### Next
 
 - [ ] Add automated application tests
-- [ ] Expand CI security gates
+- [ ] Add Kubernetes and Helm configuration scanning
 - [ ] Add trusted container artifact publishing
 - [ ] Automate Helm-based Kubernetes deployments
 - [ ] Add post-deployment validation
@@ -1098,7 +1116,7 @@ Project documentation is maintained throughout development.
 
 SecureCart has completed its initial Helm packaging and release-management milestone.
 
-SecureCart now also includes an initial GitHub Actions continuous integration pipeline. Every push and pull request to `main` automatically validates the backend application, builds both application container images, and validates the Helm deployment package before changes progress further through the delivery lifecycle.
+SecureCart now includes a six-job GitHub Actions continuous integration pipeline. Every push and pull request to `main` validates the backend application, builds both application container images, validates the Helm deployment package, scans repository history for secrets, audits Python dependencies, and scans the built container images for actionable vulnerabilities before changes progress further through the delivery lifecycle.
 
 The application now includes:
 
@@ -1127,8 +1145,12 @@ The application now includes:
 - Controlled secret-detection gate validation
 - Python dependency vulnerability scanning with `pip-audit`
 - Controlled dependency vulnerability gate validation
+- Frontend and backend container vulnerability scanning with Trivy
+- Fixable HIGH and CRITICAL container vulnerability enforcement
+- Controlled container vulnerability fail-closed validation
+- Helm pre-install and pre-upgrade database migration hooks
 
-SecureCart's CI security controls have been validated through controlled failure and recovery tests. Gitleaks successfully blocked a synthetic credential pattern, and `pip-audit` blocked an isolated pull request containing `urllib3==1.26.5`, detecting 10 known vulnerabilities before the dependency was removed and the pipeline returned to a passing state.
+SecureCart's CI security controls have been validated through controlled failure and recovery tests. Gitleaks blocked a synthetic credential pattern, `pip-audit` blocked an isolated pull request containing `urllib3==1.26.5` with 10 known vulnerabilities, and Trivy blocked a deliberately regressed backend image containing three fixable HIGH-severity operating-system vulnerabilities. In each case, remediation returned the CI pipeline to a passing state.
 
 The current deployment lifecycle is:
 
@@ -1145,17 +1167,18 @@ GitHub Container Registry
     Helm Chart
        |
        v
+Pre-Install / Pre-Upgrade
+ Database Migration Hook
+       |
+       v
    Helm Release
        |
        v
 Kubernetes Workloads
        |
-       +------> Database Migration Job
-       |               |
-       |               v
-       |           PostgreSQL
-       |
        +------> Frontend / Backend
+       |
+       +------> PostgreSQL
 ```
 
 The current Helm release lifecycle supports:
@@ -1178,7 +1201,7 @@ helm rollback
 
 Upcoming work:
 
-- Add container image vulnerability scanning
+- Add automated application tests
 - Add Kubernetes and Helm configuration scanning
 - Add trusted container artifact publishing
 - Automate Helm-based Kubernetes deployments

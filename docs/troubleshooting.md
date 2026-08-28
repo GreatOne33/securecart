@@ -1223,3 +1223,133 @@ A frontend process should not crash solely because a downstream Service name is 
 Runtime dependency resolution reduces unnecessary container restarts and allows transient dependency failures to remain isolated to the requests that require those dependencies.
 
 When application-level DNS clients are used inside Kubernetes, validate their behavior with fully qualified Kubernetes Service names rather than assuming they consume Pod DNS search domains exactly like the system resolver.
+
+## Kind cluster networking degraded while workloads remained healthy
+
+### Symptoms
+
+After the local development VM or Kind cluster had been running across development sessions, application connectivity could fail even though Kubernetes workload status appeared healthy.
+
+Observed symptoms included:
+
+```text
+Application Pods       Running / Ready
+CoreDNS Pods           Running / Ready
+PostgreSQL             Running / Ready
+DNS queries            Timeout
+Direct Pod-IP traffic  Timeout
+Service traffic        Timeout
+```
+
+This created a misleading situation where workload health suggested that the application was operational while network paths between workloads were not functioning correctly.
+
+### Investigation
+
+Application configuration and NetworkPolicies were not changed immediately.
+
+Instead, connectivity was tested at progressively lower layers.
+
+DNS connectivity to CoreDNS on TCP port 53 timed out.
+
+Direct connectivity to the PostgreSQL Pod on TCP port 5432 also timed out.
+
+Because direct Pod-IP connectivity failed in addition to DNS and Service-based connectivity, the problem could not be explained solely by:
+```text
+Kubernetes DNS naming
+Service discovery
+Service selectors
+Application configuration
+```
+
+CoreDNS itself remained Running and was not restarted during the investigation.
+
+The Kind networking DaemonSet was then restarted:
+
+```bash
+kubectl rollout restart daemonset/kindnet -n kube-system
+
+kubectl rollout status daemonset/kindnet \
+  -n kube-system \
+  --timeout=180s
+```
+
+After only the kindnet restart:
+
+```text
+CoreDNS TCP/53 connectivity       Restored
+DNS resolution                    Restored
+Direct PostgreSQL Pod TCP/5432    Restored
+Service connectivity              Restored
+```
+
+This A/B behavior isolated the recovery to the local Kind networking layer rather than an application, PostgreSQL, or CoreDNS configuration change.
+
+### Root Cause
+
+The observed failure was consistent with degraded or stale networking state in the local Kind environment.
+
+Pods remaining Running and Ready did not guarantee that the underlying pod-to-pod networking path was healthy.
+
+The condition was observed in the local development environment and is not treated as expected Kubernetes behavior or as a required production recovery procedure.
+
+### Resolution
+
+When this specific failure pattern occurs in the local Kind environment, restart the Kind networking DaemonSet:
+```bash
+kubectl rollout restart daemonset/kindnet -n kube-system
+
+kubectl rollout status daemonset/kindnet \
+  -n kube-system \
+  --timeout=180s
+```
+
+Then repeat the same connectivity tests that failed before the restart.
+
+### Diagnostic Strategy
+
+Before modifying application configuration or weakening NetworkPolicies, determine which network layer is failing.
+
+A useful troubleshooting sequence is:
+```text
+1. Check workload Ready state
+          |
+          v
+2. Test DNS connectivity
+          |
+          v
+3. Test direct Pod-IP connectivity
+          |
+          v
+4. Test Service connectivity
+          |
+          v
+5. Compare behavior with NetworkPolicy intent
+          |
+          v
+6. Inspect the local Kind networking layer
+```
+
+If both direct Pod-IP traffic and DNS connectivity fail while the destination workloads remain healthy, investigate cluster networking before changing higher-level application configuration.
+
+### Result
+
+Restarting only kindnet restored the previously failing network paths without requiring changes to:
+```text
+Application configuration
+CoreDNS configuration
+PostgreSQL configuration
+Kubernetes Services
+NetworkPolicies
+```
+
+The same application and security configuration functioned correctly once the local networking layer recovered.
+
+### Lesson
+
+Kubernetes resource health and network health must be validated independently.
+
+A Running or Ready workload confirms that Kubernetes health criteria are satisfied, but it does not prove that every required network path is functioning.
+
+Troubleshooting should move down the network stack before changing application or security policy. Direct Pod-IP tests are particularly useful because they help distinguish Service or DNS problems from failures in the underlying pod network.
+
+In the SecureCart local Kind environment, repeated recovery after restarting only kindnet provides a strong signal to investigate Kind networking when this specific combination of symptoms reappears.

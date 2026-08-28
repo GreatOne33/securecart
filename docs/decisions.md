@@ -582,6 +582,56 @@ Against an empty database, the Job created the schema and populated the initial 
 
 This demonstrates that Kubernetes can initialize SecureCart's database without manual host-side migration commands.
 
+### Helm Migration Lifecycle
+
+After SecureCart adopted Helm, the migration Job lifecycle was refined to support repeatable application upgrades.
+
+The Job remains a dedicated Kubernetes migration workload, but Helm now executes it as:
+
+```text
+pre-install
+pre-upgrade
+```
+
+rather than treating the completed Job as an ordinary long-lived release resource.
+
+This change was required because Kubernetes Job pod templates are immutable.
+
+The migration Job uses the versioned backend image. Updating the backend image therefore changes the Job pod template. Attempting to patch an already completed fixed-name Job during a later Helm upgrade causes Kubernetes to reject the change.
+
+The Helm chart now defines:
+
+```yaml
+annotations:
+  "helm.sh/hook": pre-install,pre-upgrade
+  "helm.sh/hook-weight": "-5"
+  "helm.sh/hook-delete-policy": before-hook-creation
+```
+
+The resulting release lifecycle is:
+
+```text
+Helm Install / Upgrade
+          |
+          v
+Migration Hook
+          |
+          v
+alembic upgrade head
+          |
+          v
+python seed.py
+          |
+          v
+Application Release
+```
+
+This preserves the original ADR decision to separate database migration from backend Pod startup while aligning the finite migration workload with the Helm release operation that requires it.
+
+The migration Job therefore remains an independently identifiable, least-privilege Kubernetes workload, but its lifecycle is controlled by Helm release hooks rather than ordinary resource patching.
+
+---
+
 ## ADR-013: Container Runtime Hardening Strategy
 
 Introduced: v1.0.0
@@ -931,3 +981,121 @@ Kubernetes
 ```
 
 This design provides a consistent foundation for local Kubernetes deployments and the future Amazon EKS deployment.
+
+---
+
+## ADR-017: CI Security Gate Strategy
+
+**Introduced:** v1.2.0
+
+SecureCart uses independent CI security gates to evaluate different security boundaries before changes are accepted.
+
+Security scanning is separated by concern rather than relying on a single scanner or a single aggregate security job.
+
+The current security model is:
+
+```text
+Source and Git History
+        |
+        v
+Secret Detection
+    Gitleaks
+        |
+        +-------------------+
+        |                   |
+        v                   v
+Python Dependencies    Container Images
+    pip-audit              Trivy
+        |                   |
+        +---------+---------+
+                  |
+                  v
+           CI Gate Result
+```
+
+### Secret Detection
+
+Gitleaks scans repository history for committed secrets.
+
+This control protects the source-control boundary and is intentionally independent from application build or dependency validation.
+
+### Dependency Vulnerability Scanning
+
+pip-audit evaluates the Python dependency set defined by the backend requirements.
+
+This control identifies known vulnerabilities in application-level Python dependencies.
+
+Dependency scanning does not replace container scanning because application dependencies represent only one layer of the resulting runtime artifact.
+
+### Container Vulnerability Scanning
+
+Trivy evaluates the built backend and frontend container images.
+
+The container security gate currently blocks images containing fixable vulnerabilities with either of the following severities:
+
+```text
+HIGH
+CRITICAL
+```
+
+Unfixed vulnerabilities are reported by the scanner but are not currently used to fail the build.
+
+The policy therefore evaluates actionable HIGH and CRITICAL findings rather than claiming that an accepted image contains zero vulnerabilities of any severity.
+
+Both application images are scanned independently so a vulnerable backend or frontend image can fail the CI workflow.
+
+### Fail-Closed Validation
+
+Security controls are not considered complete solely because the scanner executes successfully.
+
+Each security gate is deliberately tested with a controlled violation to verify that the CI workflow rejects the change.
+
+The validation model is:
+
+```text
+Clean Baseline
+      |
+      v
+Introduce Controlled Violation
+      |
+      v
+Security Check Fails
+      |
+      v
+Remove or Revert Violation
+      |
+      v
+Security Check Passes
+```
+
+This approach has been used to validate secret detection, dependency vulnerability scanning, and container vulnerability scanning.
+
+For the container vulnerability gate, a controlled regression removed the backend image's operating-system package upgrade step. Trivy then detected three fixable HIGH-severity findings and returned a non-zero exit code, causing the GitHub Actions security check to fail.
+
+Reverting the controlled regression restored the hardened image and returned the complete CI workflow to a passing state.
+
+### Independent Security Boundaries
+
+The security gates remain separate CI jobs.
+
+This provides clear failure attribution and prevents one security domain from obscuring another.
+
+The resulting model is:
+
+```text
+Gitleaks
+   |
+   +--> Source and secret exposure
+
+pip-audit
+   |
+   +--> Application dependency vulnerabilities
+
+Trivy
+   |
+   +--> Container and operating-system vulnerabilities
+```
+
+A passing result from one security gate does not imply that another security boundary is safe.
+
+This layered design establishes defense in depth within CI while keeping each policy explicit, independently testable, and explainable.
