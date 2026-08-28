@@ -1,5 +1,11 @@
 FROM python:3.14-slim
 
+USER root
+
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 RUN groupadd --system securecart \
@@ -13,7 +19,8 @@ COPY requirements.txt .
 
 RUN pip install \
     --no-cache-dir \
-    -r requirements.txt
+    -r requirements.txt \
+    && python -m pip uninstall -y pip
 
 COPY --chown=securecart:securecart main.py .
 COPY --chown=securecart:securecart seed.py .

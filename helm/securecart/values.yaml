@@ -10,7 +10,7 @@ frontend:
 
   image:
     repository: ghcr.io/greatone33/securecart-frontend
-    tag: "0.3.2"
+    tag: "0.3.3"
     pullPolicy: Always
 
   containerPort: 8080
@@ -33,7 +33,7 @@ backend:
 
   image:
     repository: ghcr.io/greatone33/securecart-backend
-    tag: "0.4.1"
+    tag: "0.4.2"
     pullPolicy: Always
 
   containerPort: 8000
