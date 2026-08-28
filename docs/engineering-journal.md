@@ -3868,3 +3868,431 @@ Container image vulnerability scanning will therefore be introduced as a separat
 The next SecureCart CI security increment will expand software-supply-chain validation beyond Python packages.
 
 The next planned control is container image vulnerability scanning so that operating-system packages, base images, and container-layer vulnerabilities can also be evaluated before artifact publication.
+
+## Container Vulnerability Security Gate
+
+The next CI security increment expanded SecureCart vulnerability analysis beyond application dependencies and into the built container images.
+
+The existing dependency vulnerability gate uses `pip-audit` to evaluate Python packages declared by the backend application. That control does not evaluate operating-system packages, base-image components, or software introduced through container image layers.
+
+Trivy was therefore added as a separate container vulnerability security gate.
+
+The CI workflow now builds the backend and frontend images directly from the pull-request source and scans those locally built artifacts before the change can pass CI.
+
+The security flow is:
+
+```text
+Application Source
+       |
+       v
+Container Build
+       |
+       v
+Local CI Image
+       |
+       v
+     Trivy
+       |
+       v
+HIGH / CRITICAL
+Fixable Findings
+    +-----+-----+
+    |           |
+   None       Found
+    |           |
+    v           v
+   Pass        Fail
+```
+
+### Container Vulnerability Policy
+
+The initial SecureCart container vulnerability policy blocks fixable vulnerabilities with a severity of:
+```text
+HIGH
+CRITICAL
+```
+
+Trivy is configured to ignore vulnerabilities for which no upstream fix is currently available.
+
+The gate therefore focuses on actionable HIGH and CRITICAL findings rather than claiming that an image contains no vulnerabilities of any severity.
+
+The CI scanner is configured with:
+```text
+Scanner: vulnerability
+Severity: HIGH,CRITICAL
+Ignore unfixed: true
+Exit code on policy violation: 1
+```
+
+A non-zero Trivy exit code causes the GitHub Actions job and pull-request CI workflow to fail.
+
+### Container Hardening
+
+Initial container analysis identified actionable operating-system and runtime findings in both application images.
+
+The frontend base image was upgraded from:
+```text
+nginxinc/nginx-unprivileged:1.27-alpine
+```
+
+to:
+```text
+nginxinc/nginx-unprivileged:1.29-alpine
+```
+
+The frontend image also performs an Alpine package upgrade during the image build before returning execution to the unprivileged NGINX user.
+
+The hardened frontend image is version:
+```text
+0.3.3
+```
+
+The backend image uses:
+```text
+python:3.14-slim
+```
+
+The backend build now upgrades Debian operating-system packages before application dependencies are installed.
+
+Investigation of Python-related vulnerability findings also showed that some reported packages were introduced through pip's vendored runtime dependencies rather than the SecureCart application dependency set.
+
+Because pip is required during image construction but is not required to run the application, pip is removed after the backend dependencies are installed.
+
+The backend container then returns to the dedicated non-root securecart runtime user.
+
+The hardened backend image is version:
+```text
+0.4.2
+```
+
+This reduced unnecessary runtime tooling while preserving the application dependencies required by FastAPI, Uvicorn, Psycopg, and Alembic.
+
+### Clean Baseline Validation
+
+Fresh backend and frontend images were built from the hardened Dockerfiles and scanned with the intended CI policy before the control was introduced into GitHub Actions.
+
+Both images produced:
+```text
+0 fixable HIGH/CRITICAL findings
+exit code 0
+```
+
+This established the known-good baseline for the container security gate.
+
+The same hardened source was then submitted through a pull request.
+
+GitHub Actions executed six independent CI jobs:
+```text
+Backend Validation
+Container Build Validation
+Container Vulnerability Scan
+Dependency Vulnerability Scan
+Helm Validation
+Secret Detection
+```
+
+All six checks passed.
+
+This established that the container vulnerability control could successfully evaluate the hardened application images without disrupting the existing CI controls.
+
+### Controlled Fail-Closed Validation
+
+A security gate must reject a known policy violation, not only report successful scans.
+
+A deliberate regression was therefore introduced on the pull-request branch by temporarily removing the backend operating-system package upgrade:
+```text
+apt-get upgrade -y
+```
+
+No other application or CI behavior was intentionally changed.
+
+The modified backend image continued to build successfully.
+
+Trivy then detected:
+```text
+3 HIGH
+0 CRITICAL
+```
+
+fixable vulnerabilities in the backend image.
+
+The findings included OpenSSL packages using an affected installed version for which a patched Debian package was available.
+
+Trivy exited with:
+```text
+exit code 1
+```
+
+GitHub Actions marked the Container Vulnerability Scan job as failed.
+
+This demonstrated that a successful container build is not sufficient for the pull request to pass. The resulting image must also satisfy the defined vulnerability policy.
+
+### Remediation Validation
+
+The deliberate vulnerability test was preserved as an explicitly labeled test commit.
+
+Rather than manually reconstructing the hardened Dockerfile, the test commit was reverted through Git.
+
+This restored the backend operating-system package upgrade and triggered another GitHub Actions execution.
+
+The pull request returned to:
+```text
+6 successful checks
+```
+
+including a successful Container Vulnerability Scan.
+
+The complete validation sequence was therefore:
+```text
+Hardened Source
+      |
+      v
+6/6 CI Checks Pass
+      |
+      v
+Deliberate Container Regression
+      |
+      v
+3 Fixable HIGH Findings
+      |
+      v
+Trivy Exit Code 1
+      |
+      v
+CI Security Gate Fails
+      |
+      v
+Regression Reverted
+      |
+      v
+6/6 CI Checks Pass
+```
+
+This validated both enforcement and recovery behavior in the actual pull-request workflow.
+
+### Current CI Security Model
+
+SecureCart CI now contains six independent jobs:
+```text
+SecureCart CI
+|
+├── Backend Validation
+|
+├── Container Build Validation
+|
+├── Helm Validation
+|
+├── Secret Detection
+|   └── Gitleaks
+|
+├── Dependency Vulnerability Scan
+|   └── pip-audit
+|
+└── Container Vulnerability Scan
+    └── Trivy
+```
+
+The dedicated security controls protect different boundaries:
+```text
+Gitleaks
+   |
+   +--> Repository and credential exposure
+
+pip-audit
+   |
+   +--> Python dependency vulnerability exposure
+
+Trivy
+   |
+   +--> Built container image vulnerability exposure
+```
+
+Container build validation and container vulnerability scanning remain separate controls.
+
+A container can build successfully while still containing vulnerable operating-system packages or runtime components.
+
+### Lessons Learned
+- A successful container build does not establish that the resulting artifact satisfies security requirements.
+- Dependency scanning and container scanning protect different software-supply-chain boundaries.
+- Container vulnerability policy should state exactly what is blocked rather than claiming an image is completely vulnerability-free.
+- Fixable HIGH and CRITICAL vulnerabilities provide an actionable initial blocking policy for SecureCart.
+- Base-image selection and operating-system package state materially affect the security posture of an application image.
+- Build-time tooling that is unnecessary at runtime can increase the runtime software surface and should be evaluated for removal.
+- Security gates should be tested with a controlled known-positive condition to prove that they fail closed.
+- A pull-request security gate is stronger when both rejection and remediation behavior are validated.
+- Independent CI jobs make the cause of a security failure visible without conflating vulnerability findings with build, application, Helm, or secret-detection failures.
+
+## Helm Database Migration Job Lifecycle Correction
+
+Deploying the hardened backend image exposed a lifecycle problem in the Helm-managed database migration Job.
+
+The original migration Job was deployed as a normal Helm-managed Kubernetes resource with the fixed name:
+
+```text
+securecart-db-migration
+```
+
+The Job executes the database lifecycle commands:
+```text
+alembic upgrade head
+python seed.py
+```
+
+and uses the same versioned backend image as the application Deployment.
+
+### Upgrade Failure
+
+When the backend image was updated from:
+```text
+0.4.1
+```
+
+to:
+```text
+0.4.2
+```
+
+the Helm upgrade failed while attempting to update the existing migration Job.
+
+Kubernetes rejected the change because the Job pod template is immutable.
+
+The failure occurred because changing the backend image tag also changed the migration Job's pod template.
+
+The original lifecycle was effectively:
+```text
+Helm Install
+     |
+     v
+Create Migration Job
+     |
+     v
+Job Completes
+     |
+     v
+Completed Job Remains
+     |
+     v
+Future Helm Upgrade
+     |
+     v
+Attempt to Patch Job Pod Template
+     |
+     v
+Kubernetes Rejects Immutable Change
+```
+
+The initial Job design therefore worked for installation but was not safe for repeatable image-changing upgrades.
+
+### Partial Upgrade Observation
+
+The failed Helm upgrade also demonstrated an important release-management behavior.
+
+Although Helm marked the release revision as failed, some resources had already been updated before the migration Job failure stopped the operation.
+
+The backend Deployment had already rolled forward to image version 0.4.2, while the completed migration Job still referenced the previous backend image.
+
+This demonstrated that a standard Helm upgrade is not automatically atomic.
+
+A failed release revision does not necessarily mean that every Kubernetes resource remained at its previous state.
+
+Operational validation must therefore inspect the actual cluster state rather than relying only on the final Helm release status.
+
+### Lifecycle Redesign
+
+The migration Job was converted from an ordinary release resource into a Helm lifecycle hook.
+
+The Job now uses:
+```YAML
+annotations:
+  "helm.sh/hook": pre-install,pre-upgrade
+  "helm.sh/hook-weight": "-5"
+  "helm.sh/hook-delete-policy": before-hook-creation
+  ```
+
+The migration lifecycle is now:
+```text
+helm install / helm upgrade
+          |
+          v
+Pre-Install / Pre-Upgrade Hook
+          |
+          v
+Database Migration Job
+          |
+          v
+alembic upgrade head
+          |
+          v
+python seed.py
+          |
+          v
+Application Release Continues
+```
+
+The before-hook-creation policy prevents a previous hook Job from blocking creation of the migration Job during a later release operation.
+
+This aligns the migration workload with the release event that requires it rather than treating a completed migration Job as a permanently patchable Kubernetes workload.
+
+### Validation
+
+The Helm chart was linted and rendered after the hook conversion.
+
+The legacy completed migration Job was removed before retrying the failed upgrade.
+
+The subsequent Helm upgrade completed successfully and created a new deployed release revision.
+
+Helm's hook metadata confirmed that the database migration Job was registered as a:
+```text
+pre-install
+pre-upgrade
+```
+
+hook using backend image version:
+```text
+0.4.2
+```
+
+Kubernetes events confirmed that the migration Job was:
+```text
+Scheduled
+Created
+Started
+Completed
+```
+
+The backend Deployment subsequently reached its desired replica state and the application was validated through the complete request path:
+```text
+Client
+  |
+  v
+HTTPS Ingress
+  |
+  v
+Frontend
+  |
+  v
+Backend 0.4.2
+  |
+  v
+PostgreSQL
+```
+
+The PostgreSQL-backed product API continued to return the expected application data after the release.
+
+### Engineering Decision
+
+Database schema migration is release lifecycle work rather than a long-running application workload.
+
+SecureCart therefore executes database migration through a Helm pre-install/pre-upgrade hook instead of maintaining the migration Job as an ordinary patchable release resource.
+
+This design allows each relevant release operation to execute migration logic using the backend image associated with that release.
+
+### Lessons Learned
+- Kubernetes Job pod templates are immutable after creation.
+- A fixed-name completed Job can prevent later Helm upgrades when its pod specification changes.
+- Database migration execution should be aligned with the application release lifecycle.
+- Helm hooks provide a lifecycle mechanism for work that must execute around install and upgrade operations.
+- A failed Helm upgrade can leave some resources updated when the operation is not atomic.
+- Helm release status should be evaluated together with the actual Kubernetes resource state.
+- Migration behavior must be tested during upgrades, not only during first-time installation.
+- Deployment automation should be designed for the second release, not only the first successful deployment.

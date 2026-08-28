@@ -1,8 +1,15 @@
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:1.29-alpine
+
+USER root
+
+RUN apk upgrade \
+    --no-cache
+
+USER 101
 
 LABEL org.opencontainers.image.title="SecureCart Frontend"
 LABEL org.opencontainers.image.description="Containerized frontend for the SecureCart cloud-native application"
-LABEL org.opencontainers.image.version="0.3.2"
+LABEL org.opencontainers.image.version="0.3.3"
 LABEL org.opencontainers.image.source="https://github.com/GreatOne33/securecart"
 LABEL org.opencontainers.image.authors="Angel Sepulveda"
 
