@@ -4296,3 +4296,157 @@ This design allows each relevant release operation to execute migration logic us
 - Helm release status should be evaluated together with the actual Kubernetes resource state.
 - Migration behavior must be tested during upgrades, not only during first-time installation.
 - Deployment automation should be designed for the second release, not only the first successful deployment.
+
+## Automated Backend API Testing
+
+The existing CI pipeline validated Python syntax, FastAPI application imports, container builds, Helm rendering, secrets, dependencies, and container vulnerabilities. These controls did not verify that the application returned the expected API behavior.
+
+Automated backend API testing was added to establish an application behavior gate in CI.
+
+### Test Scope
+
+The initial test suite uses pytest with FastAPI's TestClient and validates two database-independent endpoints:
+
+```text
+GET /health
+GET /api/status
+```
+
+The health test verifies both the HTTP status code and expected response body.
+
+The application status test verifies the expected application metadata and runtime status response.
+
+Database-dependent endpoints were intentionally excluded from this initial test layer so that the application behavior gate can run without provisioning PostgreSQL.
+
+### Test Dependency Isolation
+
+Test-specific Python dependencies are maintained separately in:
+
+```text
+app/backend/requirements-test.txt
+```
+
+Production application dependencies remain in:
+
+```text
+app/backend/requirements.txt
+```
+
+This prevents pytest and HTTP client tooling from becoming production runtime dependencies solely because they are required by CI.
+
+A clean disposable Python virtual environment was used to install both dependency sets and execute the complete test suite successfully. This verified that the tests did not depend on packages or state left behind in the existing development environment.
+
+### Test Execution Context
+
+The backend currently uses a module layout in which the FastAPI application is imported as:
+
+```python
+from main import app
+```
+
+Running pytest from the repository root initially failed during test collection because `app/backend` was not on the Python module search path.
+
+The application itself did not require restructuring to solve this CI execution concern.
+
+Backend tests are instead executed with:
+
+```text
+app/backend
+```
+
+as their working directory.
+
+This keeps the test execution context aligned with the backend application's existing module and dependency layout without adding test-specific path manipulation to the application or test code.
+
+### CI Integration
+
+A dedicated GitHub Actions job was added:
+
+```text
+Backend API Tests
+```
+
+The job:
+
+1. Checks out the repository.
+2. Configures Python 3.14.
+3. Installs production backend dependencies.
+4. Installs test-only dependencies.
+5. Executes the pytest suite from the backend working directory.
+
+Application behavior testing remains independent from backend syntax/import validation, container builds, Helm validation, and security scanning.
+
+The CI pipeline now contains seven independent validation jobs.
+
+### Fail-Closed Validation
+
+The application test gate was deliberately tested with a controlled behavioral regression.
+
+The `/health` endpoint was temporarily changed from:
+
+```json
+{
+  "status": "healthy"
+}
+```
+
+to:
+
+```json
+{
+  "status": "degraded"
+}
+```
+
+The test itself was not changed.
+
+Local pytest execution produced:
+
+```text
+1 failed, 1 passed
+```
+
+The controlled regression was then committed and evaluated through the pull-request CI pipeline.
+
+GitHub Actions produced the expected result:
+
+```text
+Backend API Tests              FAILED
+
+Backend Validation             PASSED
+Container Build Validation     PASSED
+Helm Validation                PASSED
+Secret Detection               PASSED
+Dependency Vulnerability Scan  PASSED
+Container Vulnerability Scan   PASSED
+```
+
+The failing test identified the response-contract mismatch between the expected `healthy` status and the actual `degraded` status.
+
+This demonstrated that the new gate detects application behavior regressions independently from the other CI controls and returns a non-zero result that blocks a clean CI run.
+
+### Remediation Validation
+
+The controlled application regression was reverted without modifying the test contract.
+
+Local execution returned:
+
+```text
+2 passed
+```
+
+The remediation was pushed to the same pull request and GitHub Actions reran the complete pipeline.
+
+All seven CI jobs subsequently passed.
+
+### Lessons Learned
+
+- Successful syntax compilation and application imports do not prove correct application behavior.
+- API contract tests provide a separate validation boundary from build and security controls.
+- Tests should verify expected behavior rather than merely successful endpoint execution.
+- Test-only dependencies should remain separate from production runtime dependencies.
+- Clean-environment testing helps detect hidden dependencies on local development state.
+- Test execution should respect application module boundaries instead of relying on path manipulation inside test code.
+- Database-independent tests provide a fast first application behavior gate without requiring integration infrastructure.
+- CI controls should be deliberately tested with a known failure condition to prove that they fail closed.
+- Independent CI jobs provide clear failure attribution when an application regression occurs.

@@ -83,7 +83,9 @@
 - [x] Add Gitleaks secret detection security gate
 - [x] Validate secret detection with a controlled known-positive test
 - [x] Validate CI recovery after removing synthetic credential history
-- [ ] Add automated application testing
+- [x] Add automated application testing
+- [x] Validate application test gate with a controlled API regression
+- [x] Validate CI recovery after application behavior remediation
 - [x] Add dependency vulnerability scanning with `pip-audit`
 - [x] Validate dependency security gate with a known-vulnerable package
 - [x] Validate CI recovery after dependency remediation
