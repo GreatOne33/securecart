@@ -78,7 +78,8 @@ NetworkPolicies restrict communication between application tiers so that only ex
 Current milestone:
 
 - Expand GitHub Actions continuous integration
-- Introduce automated testing and security validation
+- Expand automated application and security validation
+- Add Kubernetes and Helm configuration scanning
 - Add trusted container artifact publishing
 - Automate Helm-based Kubernetes deployments
 
@@ -314,6 +315,8 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] Validate backend Python syntax and application imports
 - [x] Validate frontend and backend container builds
 - [x] Validate Helm charts and rendered Kubernetes manifests
+- [x] Add automated backend API contract testing with pytest
+- [x] Validate application test gate with a controlled API regression
 - [x] Apply least-privilege workflow permissions
 - [x] Gitleaks secret detection
 - [x] Full-history secret scanning
@@ -324,10 +327,11 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] Block fixable HIGH and CRITICAL container vulnerabilities
 - [x] Controlled container-vulnerability gate validation
 
-The current CI pipeline contains six independent validation jobs:
+The current CI pipeline contains seven independent validation jobs:
 
 ```text
 Backend Validation
+Backend API Tests
 Container Build Validation
 Helm Validation
 Secret Detection
@@ -335,13 +339,14 @@ Dependency Vulnerability Scan
 Container Vulnerability Scan
 ```
 
+Backend API Tests validate application behavior independently from syntax, import, container-build, and security checks. The current test suite verifies the `/health` and `/api/status` response contracts without requiring a database connection.
+
 Security controls are intentionally separated by boundary. Gitleaks evaluates source and Git history, `pip-audit` evaluates Python dependencies, and Trivy evaluates the built application container images.
 
 Each security gate has been deliberately tested with a controlled violation to verify that the pipeline fails closed and returns to a passing state after remediation.
 
 #### Next
 
-- [ ] Add automated application tests
 - [ ] Add Kubernetes and Helm configuration scanning
 - [ ] Add trusted container artifact publishing
 - [ ] Automate Helm-based Kubernetes deployments
