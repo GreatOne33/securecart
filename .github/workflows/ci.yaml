@@ -115,6 +115,33 @@ jobs:
           test -s /tmp/securecart-rendered.yaml
           grep '^kind:' /tmp/securecart-rendered.yaml
 
+  kubernetes-config-scan:
+    name: Kubernetes Configuration Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.21.3
+
+      - name: Render Helm manifests
+        run: |
+          helm template securecart \
+            helm/securecart \
+            > /tmp/securecart-rendered.yaml
+
+      - name: Scan Kubernetes configuration
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: /tmp/securecart-rendered.yaml
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
   secret-detection:
     name: Secret Detection
     runs-on: ubuntu-latest
