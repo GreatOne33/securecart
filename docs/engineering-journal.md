@@ -4450,3 +4450,274 @@ All seven CI jobs subsequently passed.
 - Database-independent tests provide a fast first application behavior gate without requiring integration infrastructure.
 - CI controls should be deliberately tested with a known failure condition to prove that they fail closed.
 - Independent CI jobs provide clear failure attribution when an application regression occurs.
+
+## Kubernetes Configuration Security Gate
+
+Kubernetes configuration security scanning was added as an independent CI validation boundary for the Helm-managed deployment.
+
+The objective was not only to add a scanner, but to establish a fail-closed control that evaluates the concrete Kubernetes resources produced by the Helm chart and blocks HIGH or CRITICAL configuration findings.
+
+### Scan Target and Security Policy
+
+The active Kubernetes deployment source is the SecureCart Helm chart.
+
+Rather than scanning raw Helm templates containing Go templating expressions, the chart is first rendered into concrete Kubernetes manifests:
+
+```bash
+helm template securecart \
+  helm/securecart \
+  > /tmp/securecart-rendered.yaml
+  ```
+
+  Trivy then evaluates the rendered manifest:
+  ```bash
+  trivy config \
+  --severity HIGH,CRITICAL \
+  /tmp/securecart-rendered.yaml
+  ```
+
+This separates two validation concerns:
+
+- Helm validation determines whether the chart can lint and render successfully.
+- Kubernetes configuration scanning determines whether the resulting resources violate the selected security policy.
+
+The CI policy fails on HIGH or CRITICAL Kubernetes misconfiguration findings.
+
+### Baseline Findings
+
+The initial HIGH/CRITICAL Trivy scan produced five HIGH findings.
+
+Four workloads were reported as using insufficient default pod security context configuration:
+
+- Backend Deployment
+- Frontend Deployment
+- Database migration Job
+- PostgreSQL StatefulSet
+
+PostgreSQL also lacked an explicitly read-only container root filesystem.
+
+The baseline result was:
+```text
+Tests: 29
+Successes: 24
+Failures: 5
+
+HIGH: 5
+CRITICAL: 0
+```
+
+This established a measurable security baseline before CI enforcement was enabled.
+
+### Workload Security Hardening
+
+Pod-level security contexts were added to the backend, frontend, and database migration workloads while preserving their existing container-level controls.
+
+The pod security contexts explicitly require non-root execution and the RuntimeDefault seccomp profile.
+
+Container-level controls continue to enforce properties including:
+```text
+allowPrivilegeEscalation: false
+runAsNonRoot: true
+readOnlyRootFilesystem: true
+capabilities.drop: ALL
+```
+
+During implementation, an incorrectly nested security context still allowed Helm to render YAML successfully.
+
+Inspection of Trivy's structured output exposed that the intended security configuration was not located at the expected Kubernetes object hierarchy.
+
+This reinforced that successful YAML generation does not prove that configuration has the intended semantic structure.
+
+### PostgreSQL Runtime Validation
+
+PostgreSQL required separate treatment because it is a stateful workload with persistent storage and image-specific filesystem behavior.
+
+The Helm chart uses:
+```text
+postgres:17-alpine
+```
+
+Initial container experiments were performed against the Debian-based postgres:17 image, where the PostgreSQL user uses UID/GID 999.
+
+The actual Alpine image uses:
+```text
+uid=70(postgres)
+gid=70(postgres)
+```
+
+The difference became operationally significant because the existing Kubernetes persistent volume contained PostgreSQL data owned by UID/GID 70.
+
+The PostgreSQL workload was ultimately configured with pod-level identity controls including:
+```YAML
+runAsNonRoot: true
+runAsUser: 70
+runAsGroup: 70
+fsGroup: 70
+```
+
+The container also enforces non-root execution, no privilege escalation, the RuntimeDefault seccomp profile, and a read-only root filesystem.
+
+Because PostgreSQL still requires writable runtime paths, writable storage is provided explicitly:
+```text
+/var/lib/postgresql/data  -> persistent volume
+/tmp                      -> emptyDir
+/var/run/postgresql       -> emptyDir
+```
+
+A Docker experiment using the exact postgres:17-alpine image and UID/GID 70 confirmed that PostgreSQL could initialize and operate with a read-only root filesystem when the required writable paths were provided separately.
+
+After hardening, the selected HIGH/CRITICAL Trivy policy returned zero misconfiguration findings.
+
+### Stateful Workload Recovery
+
+Static security validation alone did not prove runtime compatibility.
+
+An initial Helm upgrade used UID/GID 999 for PostgreSQL based on testing against the wrong image variant.
+
+The existing persistent volume was actually owned by UID/GID 70, causing PostgreSQL startup failures including permission errors against the data directory.
+
+The persistent volume was inspected directly and confirmed that the existing database files remained intact and were owned by UID/GID 70.
+
+The PVC was not deleted or recreated.
+
+After correcting the workload identity to match the actual Alpine image, the desired StatefulSet configuration was applied. The PostgreSQL pod was recreated while preserving the existing persistent volume.
+
+PostgreSQL subsequently started successfully and reported that the database directory already contained a database, confirming that the existing data was reused rather than reinitialized.
+
+Runtime inspection then verified:
+```text
+uid=70(postgres)
+gid=70(postgres)
+
+/tmp                         WRITABLE
+/var/run/postgresql          WRITABLE
+/var/lib/postgresql/data     WRITABLE
+root filesystem              WRITE BLOCKED
+```
+
+This demonstrated that the workload satisfied both the intended security policy and its runtime storage requirements.
+
+The incident also demonstrated an important Helm lifecycle consideration. The pre-upgrade database migration hook depended on database availability and could therefore block the Helm upgrade needed to repair the unhealthy database workload.
+
+The corrected StatefulSet was applied as a targeted recovery action, after which Helm successfully reconciled the release through a normal upgrade.
+
+### Local Cluster DNS Troubleshooting
+
+Following the database recovery, the application database-status endpoint initially returned HTTP 502 through the ingress.
+
+Frontend logs showed that the frontend NGINX proxy could not resolve the backend Kubernetes Service.
+
+DNS resolution was tested from the affected frontend pod and failed, establishing that the error occurred on the frontend-to-backend service path rather than between the backend and PostgreSQL.
+
+The Kind network plugin was restarted:
+```bash
+kubectl rollout restart daemonset/kindnet -n kube-system
+kubectl rollout status daemonset/kindnet -n kube-system --timeout=180s
+```
+
+The same frontend pod subsequently resolved the backend Service successfully.
+
+End-to-end validation then returned HTTP 200 from:
+```text
+/api/db-status
+```
+
+with the backend reporting a successful PostgreSQL connection.
+
+This provided before-and-after evidence that the local Kind networking layer, rather than the application or database security configuration, caused the transient service-resolution failure.
+
+### CI Integration
+
+A dedicated GitHub Actions job was added:
+```text
+Kubernetes Configuration Scan
+```
+
+Each CI runner independently:
+
+  1. Checks out the repository.
+  2. Configures Helm.
+  3. Renders the SecureCart Helm chart.
+  4. Scans the rendered Kubernetes manifest with Trivy.
+  5. Returns a non-zero exit code for HIGH or CRITICAL findings.
+
+The configuration scan remains independent from Helm validation and container vulnerability scanning because each control protects a different boundary.
+
+The CI pipeline now contains eight independent validation jobs.
+
+### Controlled Fail-Closed Validation
+
+The new security gate was deliberately tested with a valid but insecure Kubernetes configuration.
+
+The backend container was temporarily changed from:
+```YAML
+readOnlyRootFilesystem: true
+```
+
+to:
+```YAML
+readOnlyRootFilesystem: false
+```
+
+Helm continued to lint and render the chart successfully.
+
+Trivy detected:
+```text
+KSV-0014 (HIGH)
+
+Container 'backend' of Deployment 'securecart-backend'
+should set 'securityContext.readOnlyRootFilesystem' to true
+```
+
+Local scanning reported:
+```text
+Failures: 1
+HIGH: 1
+CRITICAL: 0
+```
+
+The controlled regression was committed and pushed through the pull-request pipeline.
+
+GitHub Actions produced:
+```text
+Kubernetes Configuration Scan  FAILED
+
+Backend API Tests               PASSED
+Backend Validation              PASSED
+Container Build Validation      PASSED
+Container Vulnerability Scan    PASSED
+Dependency Vulnerability Scan   PASSED
+Helm Validation                 PASSED
+Secret Detection                PASSED
+```
+
+This demonstrated that syntactically valid and renderable Kubernetes configuration can still violate security policy, and that the new CI control independently blocks that condition.
+
+### Remediation Validation
+
+The controlled security regression was reverted using Git history.
+
+The rendered manifests were scanned again locally and returned:
+```text
+Misconfigurations: 0
+```
+
+under the selected HIGH/CRITICAL policy.
+
+The remediation was pushed to the same pull request.
+
+GitHub Actions reran the complete pipeline and all eight independent CI jobs passed.
+
+### Lessons Learned
+- Helm linting and successful manifest rendering do not prove secure Kubernetes configuration.
+- Scanning rendered Helm output evaluates the concrete resources that Kubernetes will receive rather than templating syntax.
+- Static security scanning should be paired with runtime validation, particularly for stateful workloads.
+- Container image variants can use different runtime identities even when they represent the same application and major version.
+- Security hardening must account for application-specific writable filesystem requirements.
+- Persistent volume ownership must be understood before changing workload runtime identity.
+- Existing persistent data should be preserved during security remediation whenever recovery can be performed safely.
+- A green static security scan does not guarantee that a workload will start successfully.
+- Helm lifecycle hooks can introduce recovery dependencies when a hook requires the service being repaired.
+- Local Kubernetes networking failures should be isolated with same-workload DNS tests before changing application or NetworkPolicy configuration.
+- CI security controls should be deliberately exercised with a known policy violation to prove that they fail closed.
+- Independent CI jobs provide clear attribution between configuration validity, application behavior, dependency risk, container risk, secret detection, and Kubernetes security policy.

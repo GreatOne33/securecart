@@ -93,7 +93,9 @@
 - [x] Enforce fixable HIGH and CRITICAL container vulnerability policy
 - [x] Validate container security gate with a controlled vulnerable image
 - [x] Validate CI recovery after container vulnerability remediation
-- [ ] Add Kubernetes and Helm configuration scanning
+- [x] Add Kubernetes configuration scanning of rendered Helm manifests with Trivy
+- [x] Validate Kubernetes configuration security gate with a controlled HIGH misconfiguration
+- [x] Validate CI recovery after Kubernetes configuration remediation
 - [ ] Add trusted container artifact publishing
 - [ ] Automate Kubernetes deployments
 - [ ] Add post-deployment validation

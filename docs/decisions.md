@@ -1001,16 +1001,16 @@ Source and Git History
 Secret Detection
     Gitleaks
         |
-        +-------------------+
-        |                   |
-        v                   v
-Python Dependencies    Container Images
-    pip-audit              Trivy
-        |                   |
-        +---------+---------+
-                  |
-                  v
-           CI Gate Result
+        +-------------------+-------------------------+
+        |                   |                         |
+        v                   v                         v
+Python Dependencies    Container Images       Kubernetes Configuration
+    pip-audit              Trivy                     Trivy
+        |                   |                         |
+        +-------------------+-------------------------+
+                            |
+                            v
+                     CI Gate Result
 ```
 
 ### Secret Detection
@@ -1044,6 +1044,48 @@ The policy therefore evaluates actionable HIGH and CRITICAL findings rather than
 
 Both application images are scanned independently so a vulnerable backend or frontend image can fail the CI workflow.
 
+### Kubernetes Configuration Scanning
+
+Trivy evaluates the concrete Kubernetes resources rendered from the SecureCart Helm chart.
+
+The Helm chart is rendered before scanning:
+
+```text
+Helm Chart + values.yaml
+          |
+          v
+     helm template
+          |
+          v
+Rendered Kubernetes Manifests
+          |
+          v
+   Trivy Config Scan
+          |
+          v
+    CI Gate Result
+```
+
+Rendered manifests are used as the security scan target rather than raw Helm templates.
+
+This allows the security gate to evaluate concrete Kubernetes resource configuration after Helm template rendering while avoiding ambiguity introduced by Go templating expressions in the source chart.
+
+Helm validation and Kubernetes configuration scanning remain separate controls.
+
+Helm validation determines whether the chart can lint and render successfully. Kubernetes configuration scanning determines whether the resulting resources violate the selected security policy.
+
+The Kubernetes configuration gate blocks findings with either of the following severities:
+```text
+HIGH
+CRITICAL
+```
+
+This policy applies specifically to Kubernetes configuration findings and is independent from the container vulnerability policy.
+
+The initial rendered-manifest baseline identified five HIGH findings across the application workloads. Workload security contexts were hardened and the selected HIGH/CRITICAL policy subsequently returned zero misconfiguration findings.
+
+Static scanning was supplemented with runtime validation because a policy-compliant manifest does not guarantee workload compatibility, particularly for stateful workloads with persistent storage.
+
 ### Fail-Closed Validation
 
 Security controls are not considered complete solely because the scanner executes successfully.
@@ -1068,11 +1110,19 @@ Remove or Revert Violation
 Security Check Passes
 ```
 
-This approach has been used to validate secret detection, dependency vulnerability scanning, and container vulnerability scanning.
+This approach has been used to validate secret detection, dependency vulnerability scanning, container vulnerability scanning, and Kubernetes configuration scanning.
 
 For the container vulnerability gate, a controlled regression removed the backend image's operating-system package upgrade step. Trivy then detected three fixable HIGH-severity findings and returned a non-zero exit code, causing the GitHub Actions security check to fail.
 
 Reverting the controlled regression restored the hardened image and returned the complete CI workflow to a passing state.
+
+For the Kubernetes configuration gate, the backend container was deliberately changed to use a writable root filesystem.
+
+The Helm chart continued to lint and render successfully, while Trivy detected KSV-0014 as a HIGH-severity Kubernetes configuration finding and returned a non-zero exit code.
+
+This demonstrated that configuration validity and configuration security are separate validation boundaries.
+
+Reverting the controlled regression restored the read-only root filesystem and returned all eight CI validation jobs to a passing state.
 
 ### Independent Security Boundaries
 
@@ -1091,9 +1141,13 @@ pip-audit
    |
    +--> Application dependency vulnerabilities
 
-Trivy
+Trivy Image Scan
    |
    +--> Container and operating-system vulnerabilities
+
+Trivy Config Scan
+   |
+   +--> Rendered Kubernetes configuration
 ```
 
 A passing result from one security gate does not imply that another security boundary is safe.
