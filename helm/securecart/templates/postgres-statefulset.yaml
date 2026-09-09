@@ -23,6 +23,14 @@ spec:
         component: database
 
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+
       containers:
         - name: postgres
           image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
@@ -33,6 +41,10 @@ spec:
 
           securityContext:
             allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            readOnlyRootFilesystem: true
             seccompProfile:
               type: RuntimeDefault
 
@@ -76,6 +88,19 @@ spec:
           volumeMounts:
             - name: postgres-data
               mountPath: /var/lib/postgresql/data
+
+            - name: postgres-tmp
+              mountPath: /tmp
+
+            - name: postgres-run
+              mountPath: /var/run/postgresql
+
+      volumes:
+        - name: postgres-tmp
+          emptyDir: {}
+
+        - name: postgres-run
+          emptyDir: {}
 
   volumeClaimTemplates:
     - metadata:

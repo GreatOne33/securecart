@@ -22,6 +22,11 @@ spec:
         component: database-migration
 
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+
       restartPolicy: Never
 
       containers:

@@ -79,9 +79,9 @@ Current milestone:
 
 - Expand GitHub Actions continuous integration
 - Expand automated application and security validation
-- Add Kubernetes and Helm configuration scanning
 - Add trusted container artifact publishing
 - Automate Helm-based Kubernetes deployments
+- Add post-deployment validation
 
 SecureCart is an ongoing engineering project designed to simulate the work of a Cloud Infrastructure / Platform Engineer. The project follows production-style engineering practices including Infrastructure as Code, Git-based workflows, documentation, containerization, application networking, persistent storage, and Kubernetes deployments.
 
@@ -326,14 +326,18 @@ SecureCart is an ongoing engineering project designed to simulate the work of a 
 - [x] Frontend and backend container vulnerability scanning with Trivy
 - [x] Block fixable HIGH and CRITICAL container vulnerabilities
 - [x] Controlled container-vulnerability gate validation
+- [x] Kubernetes configuration scanning of rendered Helm manifests with Trivy
+- [x] Block HIGH and CRITICAL Kubernetes configuration findings
+- [x] Controlled Kubernetes configuration gate validation
 
-The current CI pipeline contains seven independent validation jobs:
+The current CI pipeline contains eight independent validation jobs:
 
 ```text
 Backend Validation
 Backend API Tests
 Container Build Validation
 Helm Validation
+Kubernetes Configuration Scan
 Secret Detection
 Dependency Vulnerability Scan
 Container Vulnerability Scan
@@ -341,13 +345,12 @@ Container Vulnerability Scan
 
 Backend API Tests validate application behavior independently from syntax, import, container-build, and security checks. The current test suite verifies the `/health` and `/api/status` response contracts without requiring a database connection.
 
-Security controls are intentionally separated by boundary. Gitleaks evaluates source and Git history, `pip-audit` evaluates Python dependencies, and Trivy evaluates the built application container images.
+Security controls are intentionally separated by boundary. Gitleaks evaluates source and Git history, `pip-audit` evaluates Python dependencies, Trivy image scanning evaluates the built application container images, and Trivy configuration scanning evaluates the concrete Kubernetes resources rendered from the Helm chart.
 
 Each security gate has been deliberately tested with a controlled violation to verify that the pipeline fails closed and returns to a passing state after remediation.
 
 #### Next
 
-- [ ] Add Kubernetes and Helm configuration scanning
 - [ ] Add trusted container artifact publishing
 - [ ] Automate Helm-based Kubernetes deployments
 - [ ] Add post-deployment validation
@@ -1121,7 +1124,7 @@ Project documentation is maintained throughout development.
 
 SecureCart has completed its initial Helm packaging and release-management milestone.
 
-SecureCart now includes a six-job GitHub Actions continuous integration pipeline. Every push and pull request to `main` validates the backend application, builds both application container images, validates the Helm deployment package, scans repository history for secrets, audits Python dependencies, and scans the built container images for actionable vulnerabilities before changes progress further through the delivery lifecycle.
+SecureCart now includes an eight-job GitHub Actions continuous integration pipeline. Every push and pull request to `main` validates backend syntax and application imports, executes backend API contract tests, builds both application container images, validates the Helm deployment package, scans repository history for secrets, audits Python dependencies, scans the built container images for actionable vulnerabilities, and scans rendered Kubernetes manifests for HIGH and CRITICAL configuration findings before changes progress further through the delivery lifecycle.
 
 The application now includes:
 
@@ -1155,7 +1158,7 @@ The application now includes:
 - Controlled container vulnerability fail-closed validation
 - Helm pre-install and pre-upgrade database migration hooks
 
-SecureCart's CI security controls have been validated through controlled failure and recovery tests. Gitleaks blocked a synthetic credential pattern, `pip-audit` blocked an isolated pull request containing `urllib3==1.26.5` with 10 known vulnerabilities, and Trivy blocked a deliberately regressed backend image containing three fixable HIGH-severity operating-system vulnerabilities. In each case, remediation returned the CI pipeline to a passing state.
+SecureCart's CI security controls have been validated through controlled failure and recovery tests. Gitleaks blocked a synthetic credential pattern, `pip-audit` blocked an isolated pull request containing `urllib3==1.26.5` with 10 known vulnerabilities, Trivy image scanning blocked a deliberately regressed backend image containing three fixable HIGH-severity operating-system vulnerabilities, and Trivy configuration scanning blocked a deliberately weakened Kubernetes backend workload with a HIGH-severity writable-root-filesystem finding. The backend API test gate was also validated with a controlled response-contract regression. In each case, remediation returned the CI pipeline to a passing state.
 
 The current deployment lifecycle is:
 
@@ -1206,8 +1209,6 @@ helm rollback
 
 Upcoming work:
 
-- Add automated application tests
-- Add Kubernetes and Helm configuration scanning
 - Add trusted container artifact publishing
 - Automate Helm-based Kubernetes deployments
 - Add post-deployment validation
