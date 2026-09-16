@@ -4721,3 +4721,220 @@ GitHub Actions reran the complete pipeline and all eight independent CI jobs pas
 - Local Kubernetes networking failures should be isolated with same-workload DNS tests before changing application or NetworkPolicy configuration.
 - CI security controls should be deliberately exercised with a known policy violation to prove that they fail closed.
 - Independent CI jobs provide clear attribution between configuration validity, application behavior, dependency risk, container risk, secret detection, and Kubernetes security policy.
+
+---
+
+## Trusted Container Artifact Publishing
+
+SecureCart extended its delivery pipeline from source validation into automated publication of trusted container artifacts.
+
+The existing CI workflow validates source, application behavior, container builds, Helm configuration, secrets, dependencies, container vulnerabilities, and rendered Kubernetes configuration through eight independent jobs.
+
+Artifact publishing is intentionally implemented as a separate GitHub Actions workflow rather than adding registry write access to the validation workflow.
+
+### Publishing Trust Boundary
+
+The publishing workflow is triggered by completion of the `SecureCart CI` workflow on `main`.
+
+Publishing proceeds only when the upstream workflow reports a successful conclusion.
+
+The resulting trust path is:
+
+```text
+Source Commit on main
+        |
+        v
+SecureCart CI
+        |
+        v
+Eight Validation Jobs
+        |
+        v
+Successful CI Conclusion
+        |
+        v
+Trusted Artifact Publishing
+        |
+        v
+Checkout Validated Commit SHA
+        |
+        +----------------------+
+        |                      |
+        v                      v
+Build Backend             Build Frontend
+        |                      |
+        v                      v
+Trivy Image Scan          Trivy Image Scan
+        |                      |
+        +----------+-----------+
+                   |
+                   v
+             Publish to GHCR
+                   |
+                   v
+        Record Artifact Digests
+```
+
+The publishing workflow checks out:
+```text
+github.event.workflow_run.head_sha
+```
+
+rather than implicitly building the current repository state.
+
+This binds the artifact build to the exact source commit evaluated by the successful upstream CI run.
+
+### Least-Privilege Registry Access
+
+The validation workflow retains:
+
+```YAML
+permissions:
+  contents: read
+```
+
+and therefore does not receive package publishing privileges.
+
+The publishing job independently declares:
+```YAML
+permissions:
+  contents: read
+  packages: write
+```
+
+This keeps registry write capability outside the general CI validation boundary.
+
+Authentication to GitHub Container Registry uses the workflow-scoped GITHUB_TOKEN rather than a separately stored long-lived registry credential.
+
+### Commit-Derived Artifact Identity
+
+Backend and frontend images are built from the validated source commit and tagged using the complete Git commit SHA:
+```text
+sha-<validated-commit>
+```
+
+For the first successful automated publication, both images were associated with source commit:
+```text
+ac970c580a7438e63602c3d1b474bc5c6b94a363
+```
+
+producing:
+```text
+ghcr.io/greatone33/securecart-backend:sha-ac970c580a7438e63602c3d1b474bc5c6b94a363
+
+ghcr.io/greatone33/securecart-frontend:sha-ac970c580a7438e63602c3d1b474bc5c6b94a363
+```
+
+This creates a direct traceability relationship between validated source and the published application artifacts.
+
+### Pre-Publish Security Validation
+
+The publishing workflow rebuilds both application images from the validated commit.
+
+Each resulting image is scanned with Trivy before registry authentication and publication.
+
+The publishing policy blocks fixable findings with either of the following severities:
+
+```text
+HIGH
+CRITICAL
+```
+
+This ensures that the artifacts crossing the registry publishing boundary are themselves evaluated before publication rather than relying only on an earlier build performed by a different CI job.
+
+Only after both trusted image scans succeed does the workflow authenticate to GHCR and attempt to push the artifacts.
+
+### Initial Registry Authorization Failure
+
+The first automated publication reached the GHCR push operation but failed with:
+```text
+permission_denied: write_package
+```
+
+The workflow had successfully authenticated and the publishing job already declared:
+```YAML
+packages: write
+```
+
+The failure demonstrated a distinction between GitHub Actions token permissions and authorization to an existing GitHub Container Registry package.
+
+The existing SecureCart backend and frontend packages had previously been created through the manual publishing workflow.
+
+Repository access to both existing packages was configured through their GitHub Actions access settings, granting the securecart repository Write permission.
+
+No personal access token was introduced, and the workflow's permission model was not broadened.
+
+The failed publishing workflow was then rerun with the same validated source commit and workflow configuration.
+
+### Successful Publication Validation
+
+After correcting package authorization, the same trusted publishing workflow completed successfully.
+
+The workflow:
+
+1. Checked out the validated source commit.
+2. Built the backend container image.
+3. Scanned the backend image with Trivy.
+4. Built the frontend container image.
+5. Scanned the frontend image with Trivy.
+6. Authenticated to GitHub Container Registry.
+7. Published both commit-tagged images.
+8. Queried the published artifacts and recorded their registry digests.
+
+Both GHCR packages subsequently displayed the new commit-derived image tag.
+
+This validated the complete automated path from successful CI validation to registry publication.
+
+### Immutable Artifact Digests
+
+After publication, the workflow resolves the registry digest for each pushed image using:
+
+```text
+docker buildx imagetools inspect
+```
+
+The resulting artifact identities are recorded in the GitHub Actions job summary as:
+```text
+Source commit: <validated Git SHA>
+Backend: ghcr.io/greatone33/securecart-backend@sha256:<digest>
+Frontend: ghcr.io/greatone33/securecart-frontend@sha256:<digest>
+```
+
+The commit-derived tag provides human-readable traceability back to source control, while the registry digest provides immutable content identity for the published artifact.
+
+This distinction prepares the deployment pipeline to consume a specific trusted artifact rather than rebuilding application source during deployment.
+
+### Delivery Boundary
+
+SecureCart now separates validation, artifact publication, and future deployment into distinct stages:
+```text
+Source
+  |
+  v
+CI Validation
+  |
+  v
+Trusted Artifact Publishing
+  |
+  v
+GitHub Container Registry
+  |
+  v
+Future Controlled Deployment
+```
+
+The deployment stage does not yet have Kubernetes or cloud credentials.
+
+This preserves the existing separation between artifact production and environment mutation while establishing the trusted artifact boundary required for automated deployment.
+
+### Lessons Learned
+- Successful CI validation and artifact publication are separate security boundaries.
+- Registry write permission should not be granted to jobs that only require source validation.
+- workflow_run.head_sha binds downstream artifact creation to the exact commit evaluated by the upstream workflow.
+- Commit-derived image tags provide source traceability, while registry digests provide immutable artifact identity.
+- Rebuilding and rescanning at the publishing boundary verifies the actual artifacts being released.
+- GitHub Actions packages: write permission does not by itself guarantee write access to an existing GHCR package.
+- Existing package-level GitHub Actions authorization can affect repository workflows even when workflow token permissions are correct.
+- Authentication success and authorization success are separate conditions and should be diagnosed independently.
+- A failed publishing run can expose a real delivery-boundary configuration problem without requiring the security model to be weakened.
+- Deployment automation should consume trusted published artifacts rather than rebuilding application source during deployment.
