@@ -96,7 +96,10 @@
 - [x] Add Kubernetes configuration scanning of rendered Helm manifests with Trivy
 - [x] Validate Kubernetes configuration security gate with a controlled HIGH misconfiguration
 - [x] Validate CI recovery after Kubernetes configuration remediation
-- [ ] Add trusted container artifact publishing
+- [x] Add trusted container artifact publishing to GitHub Container Registry
+- [x] Bind published container artifacts to the validated source commit
+- [x] Record immutable backend and frontend registry digests
+- [x] Validate automated GHCR publication and package authorization
 - [ ] Automate Kubernetes deployments
 - [ ] Add post-deployment validation
 

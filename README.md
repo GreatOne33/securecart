@@ -77,10 +77,8 @@ NetworkPolicies restrict communication between application tiers so that only ex
 
 Current milestone:
 
-- Expand GitHub Actions continuous integration
-- Expand automated application and security validation
-- Add trusted container artifact publishing
 - Automate Helm-based Kubernetes deployments
+- Consume trusted published container artifacts during deployment
 - Add post-deployment validation
 
 SecureCart is an ongoing engineering project designed to simulate the work of a Cloud Infrastructure / Platform Engineer. The project follows production-style engineering practices including Infrastructure as Code, Git-based workflows, documentation, containerization, application networking, persistent storage, and Kubernetes deployments.
@@ -349,10 +347,18 @@ Security controls are intentionally separated by boundary. Gitleaks evaluates so
 
 Each security gate has been deliberately tested with a controlled violation to verify that the pipeline fails closed and returns to a passing state after remediation.
 
+#### Trusted Artifact Publishing
+
+- [x] Publish trusted backend and frontend container artifacts to GitHub Container Registry
+- [x] Bind artifact builds to the exact source commit validated by successful CI
+- [x] Rebuild and scan publishable images before registry publication
+- [x] Use commit-derived image tags for source traceability
+- [x] Record immutable registry digests for published artifacts
+- [x] Separate registry write privileges from the general CI validation workflow
+
 #### Next
 
-- [ ] Add trusted container artifact publishing
-- [ ] Automate Helm-based Kubernetes deployments
+- [ ] Automate Helm-based Kubernetes deployments using trusted published artifacts
 - [ ] Add post-deployment validation
 
 ---
@@ -1126,6 +1132,8 @@ SecureCart has completed its initial Helm packaging and release-management miles
 
 SecureCart now includes an eight-job GitHub Actions continuous integration pipeline. Every push and pull request to `main` validates backend syntax and application imports, executes backend API contract tests, builds both application container images, validates the Helm deployment package, scans repository history for secrets, audits Python dependencies, scans the built container images for actionable vulnerabilities, and scans rendered Kubernetes manifests for HIGH and CRITICAL configuration findings before changes progress further through the delivery lifecycle.
 
+After successful CI validation on `main`, a separate trusted artifact publishing workflow checks out the exact validated commit, rebuilds and scans the backend and frontend images, and publishes them to GitHub Container Registry using commit-derived tags. The workflow then records immutable registry digests for the published artifacts. Registry write access remains isolated from the general CI validation workflow.
+
 The application now includes:
 
 - Version-controlled PostgreSQL schema migrations with Alembic
@@ -1138,6 +1146,9 @@ The application now includes:
 - Dropped Linux capabilities and disabled privilege escalation
 - Versioned application container images
 - GitHub Container Registry publishing
+- Automated trusted container artifact publishing after successful CI
+- Commit-derived backend and frontend image tags
+- Immutable published artifact digest recording
 - Helm-based Kubernetes application packaging
 - Parameterized deployment configuration through `values.yaml`
 - Helm release ownership and revision history
@@ -1209,8 +1220,7 @@ helm rollback
 
 Upcoming work:
 
-- Add trusted container artifact publishing
-- Automate Helm-based Kubernetes deployments
+- Automate Helm-based Kubernetes deployments using trusted published artifacts
 - Add post-deployment validation
 
 **Long-term goal:** Deploy SecureCart to Amazon EKS using Terraform, Helm, and GitHub Actions.

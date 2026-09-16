@@ -826,9 +826,9 @@ Kubernetes deployment
 
 ```
 
-This strategy prepares SecureCart for future CI/CD automation.
+This strategy established the registry-backed artifact model later used by SecureCart's CI/CD automation.
 
-GitHub Actions will eventually build, test, scan, and publish container images automatically.
+GitHub Actions now validates application changes and automatically builds, scans, and publishes trusted container images after successful CI on `main`.
 
 The AWS deployment phase may replace GHCR with Amazon ECR while preserving the same registry-based deployment model.
 
@@ -1153,3 +1153,203 @@ Trivy Config Scan
 A passing result from one security gate does not imply that another security boundary is safe.
 
 This layered design establishes defense in depth within CI while keeping each policy explicit, independently testable, and explainable.
+
+---
+
+## ADR-018: Trusted Container Artifact Publishing Strategy
+
+**Introduced:** v1.3.0
+
+SecureCart separates continuous integration validation from container artifact publication.
+
+A successful `SecureCart CI` run on `main` establishes the source commit that is eligible for artifact publication. A separate `Trusted Artifact Publishing` workflow consumes that successful workflow result and builds publishable container artifacts from the exact validated commit.
+
+The trust model is:
+
+```text
+Source Commit on main
+        |
+        v
+SecureCart CI
+        |
+        v
+Validation Successful
+        |
+        v
+workflow_run
+        |
+        v
+Checkout workflow_run.head_sha
+        |
+        v
+Build Application Images
+        |
+        v
+Trivy Image Validation
+        |
+        v
+Publish to GHCR
+        |
+        v
+Commit-Tagged Images
+        |
+        v
+Immutable Registry Digests
+        |
+        v
+Future Deployment Input
+```
+
+### Validated Source Identity
+
+The publishing workflow does not implicitly check out the latest state of main.
+
+Instead, it checks out:
+```text
+github.event.workflow_run.head_sha
+```
+
+from the successful upstream CI execution.
+
+This creates an explicit relationship between the source commit that passed validation and the source commit used to produce the published artifacts.
+
+The publishing workflow therefore operates on validated source identity rather than repository state that may have changed after the upstream workflow completed.
+
+### Privilege Separation
+
+Validation and artifact publication use separate GitHub Actions permission boundaries.
+
+The `SecureCart CI` workflow retains:
+
+```YAML
+permissions:
+  contents: read
+```
+
+The validation workflow therefore has no package publishing capability.
+
+The publishing workflow also defaults to read-only repository access, while the publishing job explicitly receives:
+```YAML
+permissions:
+  contents: read
+  packages: write
+```
+
+Registry write access is therefore granted only to the job responsible for crossing the artifact publication boundary.
+
+GitHub Container Registry authentication uses the workflow-scoped GITHUB_TOKEN. A separately managed long-lived registry credential is not required for this publishing path.
+
+This design limits the privileges available to ordinary CI validation and keeps package mutation capability isolated to the publishing workflow.
+
+### Publish-After-Validation Policy
+
+Artifact publication is conditional on the upstream SecureCart CI workflow completing successfully.
+
+The publishing job evaluates:
+```text
+github.event.workflow_run.conclusion == 'success'
+```
+
+A failed, cancelled, or otherwise unsuccessful upstream validation run does not satisfy the publication condition.
+
+The publishing workflow also rebuilds the backend and frontend images from the validated commit and scans both resulting images with Trivy before authenticating to GHCR and pushing them.
+
+The publication sequence is therefore:
+```text
+Validated Commit
+      |
+      v
+Build Backend
+      |
+      v
+Scan Backend
+      |
+      v
+Build Frontend
+      |
+      v
+Scan Frontend
+      |
+      v
+Authenticate to GHCR
+      |
+      v
+Publish Images
+```
+
+Registry authentication and publication occur only after both image scans have completed successfully.
+
+This preserves a security check at the artifact publication boundary and ensures that the images being published are the images evaluated immediately before publication.
+
+### Artifact Identity
+
+Published backend and frontend images receive a tag derived from the complete validated Git commit SHA:
+
+```text
+sha-<validated-commit>
+```
+
+This provides a human-readable relationship between source control and the corresponding registry artifacts.
+
+A mutable or descriptive tag alone is not treated as the strongest artifact identity.
+
+After publication, the workflow resolves the registry digest for each image and records identities in the form:
+```text
+ghcr.io/greatone33/securecart-backend@sha256:<digest>
+ghcr.io/greatone33/securecart-frontend@sha256:<digest>
+```
+
+The commit-derived tag answers which validated source revision produced the artifact.
+
+The registry digest identifies the exact published container content.
+
+Together these identities provide source traceability and immutable artifact addressing.
+
+### Deployment Artifact Contract
+
+Future automated deployment should consume artifacts produced by the trusted publishing boundary rather than rebuilding application source during deployment.
+
+The intended delivery model is:
+```text
+Validated Source
+      |
+      v
+Trusted Build
+      |
+      v
+Security Scan
+      |
+      v
+Published Artifact
+      |
+      v
+Immutable Digest
+      |
+      v
+Controlled Deployment
+```
+
+Separating artifact production from deployment prevents the deployment stage from independently producing container content that was not the artifact published by the trusted build process.
+
+The deployment workflow should therefore promote or reference previously published artifacts and preserve their relationship to the validated source commit.
+
+This establishes the container registry as the artifact boundary between CI and deployment.
+
+### Consequences
+
+This strategy introduces several deliberate tradeoffs.
+
+The publishing workflow rebuilds application images after the upstream CI workflow has already performed container build and vulnerability validation. This duplicates some build work, but keeps the publishing boundary independently responsible for the artifacts it releases.
+
+Artifact publication also depends on both GitHub Actions workflow permissions and GHCR package-level authorization. Existing packages may require explicit repository access even when the workflow correctly declares packages: write.
+
+In return, the architecture provides:
+
+- separation between validation and registry mutation privileges;
+- explicit binding between successful CI and the source used for publication;
+- security validation immediately before publication;
+- commit-level traceability for published images;
+- immutable digest identities for downstream consumers; and
+- a defined trusted artifact boundary for future automated deployment.
+
+SecureCart accepts the additional publishing complexity in exchange for a clearer and more defensible software delivery trust chain.
