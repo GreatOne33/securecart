@@ -29,7 +29,7 @@ spec:
 
       containers:
         - name: frontend
-          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          image: {{ include "securecart.frontendImage" . | quote }}
           imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
 
           ports:
