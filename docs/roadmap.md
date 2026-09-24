@@ -71,7 +71,10 @@
 - [x] Implement Alembic database schema migrations
 - [x] Add idempotent database seed automation
 - [x] Create Kubernetes database migration Job
-- [x] Integrate database migration Job with Helm pre-install and pre-upgrade hooks
+- [x] Automate Kubernetes deployments using trusted GHCR artifacts and immutable image digests
+- [x] Validate fresh Helm installation, workload readiness, and database migration
+- [x] Add automated post-deployment HTTP smoke tests
+- [x] Validate frontend, API routing, PostgreSQL connectivity, and seeded products in GitHub Actions
 - [x] Harden production-style frontend and backend container images
 - [x] Publish versioned application images to GitHub Container Registry
 - [x] Package Kubernetes application with Helm and validate release lifecycle
