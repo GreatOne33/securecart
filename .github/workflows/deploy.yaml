@@ -1,0 +1,193 @@
+name: Automated Kubernetes Deployment
+
+on:
+  workflow_run:
+    workflows:
+      - Trusted Artifact Publishing
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    name: Deploy Trusted Artifacts
+
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    env:
+      REGISTRY: ghcr.io
+      BACKEND_IMAGE: ghcr.io/greatone33/securecart-backend
+      FRONTEND_IMAGE: ghcr.io/greatone33/securecart-frontend
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+      IMAGE_TAG: sha-${{ github.event.workflow_run.head_sha }}
+
+    steps:
+      - name: Verify trusted publishing event
+        env:
+          UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+          UPSTREAM_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+          UPSTREAM_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          UPSTREAM_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          test "${UPSTREAM_EVENT}" = "workflow_run"
+          test "${UPSTREAM_REPOSITORY}" = "${EXPECTED_REPOSITORY}"
+          test "${UPSTREAM_BRANCH}" = "main"
+          test "${UPSTREAM_CONCLUSION}" = "success"
+          [[ "${UPSTREAM_SHA}" =~ ^[0-9a-f]{40}$ ]]
+
+          echo "Trusted publishing event verified."
+      - name: Checkout deployment source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Display deployment identity
+        run: |
+          echo "Source commit: ${SOURCE_SHA}"
+          echo "Artifact tag: ${IMAGE_TAG}"
+          echo "Upstream workflow: ${{ github.event.workflow_run.name }}"
+          echo "Upstream conclusion: ${{ github.event.workflow_run.conclusion }}"
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve trusted artifact digests
+        id: artifacts
+        run: |
+          set -euo pipefail
+          BACKEND_DIGEST="$(docker buildx imagetools inspect \
+            "${BACKEND_IMAGE}:${IMAGE_TAG}" \
+            --format '{{json .Manifest.Digest}}' | tr -d '"')"
+
+          FRONTEND_DIGEST="$(docker buildx imagetools inspect \
+            "${FRONTEND_IMAGE}:${IMAGE_TAG}" \
+            --format '{{json .Manifest.Digest}}' | tr -d '"')"
+
+          test -n "${BACKEND_DIGEST}"
+          test -n "${FRONTEND_DIGEST}"
+
+          if [[ ! "${BACKEND_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+          echo "Invalid backend digest: ${BACKEND_DIGEST}" >&2
+          exit 1
+          fi
+
+          if [[ ! "${FRONTEND_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+          echo "Invalid frontend digest: ${FRONTEND_DIGEST}" >&2
+          exit 1
+          fi
+
+          echo "backend_digest=${BACKEND_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "frontend_digest=${FRONTEND_DIGEST}" >> "$GITHUB_OUTPUT"
+
+          echo "Backend artifact: ${BACKEND_IMAGE}@${BACKEND_DIGEST}"
+          echo "Frontend artifact: ${FRONTEND_IMAGE}@${FRONTEND_DIGEST}"
+
+      - name: Create ephemeral Kubernetes cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: securecart-ci
+
+      - name: Verify Kubernetes cluster
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Create ephemeral database secret
+        run: |
+          POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+
+          kubectl create secret generic securecart-postgres-secret \
+            --from-literal=POSTGRES_DB=securecart \
+            --from-literal=POSTGRES_USER=securecart_app \
+            --from-literal=POSTGRES_PASSWORD="${POSTGRES_PASSWORD}"
+
+          kubectl get secret securecart-postgres-secret
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Deploy trusted artifacts
+        env:
+          BACKEND_DIGEST: ${{ steps.artifacts.outputs.backend_digest }}
+          FRONTEND_DIGEST: ${{ steps.artifacts.outputs.frontend_digest }}
+        run: |
+          set -euo pipefail
+          helm upgrade --install securecart helm/securecart \
+            --namespace default \
+            --set ingress.enabled=false \
+            --set-string backend.image.digest="${BACKEND_DIGEST}" \
+            --set-string frontend.image.digest="${FRONTEND_DIGEST}" \
+            --wait \
+            --timeout 5m
+
+      - name: Validate Kubernetes deployment
+        env:
+          BACKEND_DIGEST: ${{ steps.artifacts.outputs.backend_digest }}
+          FRONTEND_DIGEST: ${{ steps.artifacts.outputs.frontend_digest }}
+        run: |
+          set -euo pipefail
+
+          echo "=== Kubernetes workloads ==="
+          kubectl get pods,deployments,statefulsets,jobs
+
+          echo "=== Deployment readiness ==="
+          kubectl rollout status deployment/securecart-backend --timeout=120s
+          kubectl rollout status deployment/securecart-frontend --timeout=120s
+          kubectl rollout status statefulset/securecart-postgres --timeout=120s
+
+          echo "=== Database migration ==="
+          kubectl wait \
+            --for=condition=complete \
+            job/securecart-db-migration \
+            --timeout=120s
+
+          echo "=== Verify immutable artifact identities ==="
+          ACTUAL_BACKEND="$(kubectl get deployment securecart-backend \
+            -o jsonpath='{.spec.template.spec.containers[0].image}')"
+
+          ACTUAL_FRONTEND="$(kubectl get deployment securecart-frontend \
+            -o jsonpath='{.spec.template.spec.containers[0].image}')"
+
+          EXPECTED_BACKEND="${BACKEND_IMAGE}@${BACKEND_DIGEST}"
+          EXPECTED_FRONTEND="${FRONTEND_IMAGE}@${FRONTEND_DIGEST}"
+
+          test "${ACTUAL_BACKEND}" = "${EXPECTED_BACKEND}"
+          test "${ACTUAL_FRONTEND}" = "${EXPECTED_FRONTEND}"
+
+          echo "Backend verified: ${ACTUAL_BACKEND}"
+          echo "Frontend verified: ${ACTUAL_FRONTEND}"
+          echo "Deployment validation passed."
+
+      - name: Collect deployment failure diagnostics
+        if: ${{ failure() }}
+        run: |
+          echo "=== Kubernetes resources ==="
+          kubectl get pods,deployments,statefulsets,jobs,pvc -A || true
+
+          echo "=== Kubernetes events ==="
+          kubectl get events -A --sort-by=.lastTimestamp || true
+
+          echo "=== PostgreSQL logs ==="
+          kubectl logs securecart-postgres-0 \
+            --all-containers=true --tail=100 || true
+
+          echo "=== Migration logs ==="
+          kubectl logs job/securecart-db-migration \
+            --tail=100 || true
+
+          echo "=== Pod descriptions ==="
+          kubectl describe pods || true
