@@ -4938,3 +4938,97 @@ This preserves the existing separation between artifact production and environme
 - Authentication success and authorization success are separate conditions and should be diagnosed independently.
 - A failed publishing run can expose a real delivery-boundary configuration problem without requiring the security model to be weakened.
 - Deployment automation should consume trusted published artifacts rather than rebuilding application source during deployment.
+
+## September 24, 2026 - Automated Kubernetes Deployment and Post-Deployment Validation
+
+### Objective
+
+Extend SecureCart's CI/CD pipeline beyond trusted artifact publishing by automatically deploying validated container artifacts to Kubernetes and verifying application functionality after deployment.
+
+### Deployment Architecture
+
+Implemented a GitHub Actions deployment workflow triggered by successful completion of Trusted Artifact Publishing.
+
+The workflow creates an ephemeral Kind cluster on a GitHub-hosted runner, resolves published backend and frontend images to immutable GHCR digests, and deploys them using Helm.
+
+The deployment job uses read-only repository and registry permissions. Application images are consumed from GHCR rather than rebuilt during deployment.
+
+This environment validates deployment behavior but is not a persistent application-hosting environment.
+
+### Fresh-Installation Remediation
+
+Local fresh-install testing exposed two database initialization problems.
+
+First, the database migration Job originally ran as a pre-install hook, before PostgreSQL and its Kubernetes Service existed. Changed the hook configuration to `post-install,pre-upgrade`.
+
+Second, PostgreSQL could not initialize a newly provisioned volume because of filesystem ownership. Added a short-lived volume-permissions init container while retaining the main PostgreSQL container's non-root configuration.
+
+A subsequent fresh Helm installation completed successfully, including PostgreSQL initialization, schema migration, and application workload readiness.
+
+### First Successful Automated Deployment
+
+Merged automated deployment in PR #8.
+
+The first GitHub Actions deployment completed successfully following CI validation and trusted artifact publishing.
+
+Validation confirmed:
+
+* Two backend replicas ready.
+* Three frontend replicas ready.
+* One PostgreSQL replica ready.
+* Database migration Job completed.
+* No application pod restarts during validation.
+* Backend and frontend Deployment specifications matched the expected immutable GHCR digests.
+
+This established the automated path from validated source code to published container artifacts and Kubernetes deployment.
+
+### Application-Level Post-Deployment Validation
+
+Implemented `scripts/smoke-test.sh` and integrated it into the existing deployment workflow.
+
+The workflow establishes a temporary port-forward to the frontend Kubernetes Service, waits for frontend availability, and executes HTTP smoke tests.
+
+The tests verify:
+
+1. The frontend serves HTML.
+2. NGINX successfully routes API requests to FastAPI.
+3. FastAPI connects to PostgreSQL and executes a test query.
+4. The product API returns records from the seeded database.
+
+The script fails on unsuccessful HTTP requests or unexpected application responses.
+
+Merged post-deployment validation in PR #9.
+
+Post-merge CI #32 passed on commit `58be565`. The subsequent deployment workflow completed all four application smoke tests successfully.
+
+### Local Kind DNS Incident
+
+During local smoke-test development, the frontend served HTML but API requests returned HTTP 502.
+
+NGINX reported a DNS resolution timeout for `securecart-backend-service.default.svc.cluster.local`.
+
+The backend pods and Service were present, and CoreDNS pods reported Running. Restarting the Kind networking DaemonSet restored connectivity.
+
+All four local smoke tests subsequently passed without changing application code or NetworkPolicies.
+
+The immediate failure was DNS resolution. The underlying reason for the networking disruption was not conclusively established.
+
+No automatic networking restart was added to GitHub Actions. Future failures should be investigated using DNS, CoreDNS, networking, and Kubernetes event diagnostics.
+
+### Outcome
+
+SecureCart now has an automated delivery pipeline:
+
+Source changes → CI validation → trusted artifact publishing → immutable artifact deployment → Kubernetes readiness validation → application HTTP smoke tests.
+
+The deployment environment remains ephemeral. Persistent AWS infrastructure and cloud deployment are future milestones.
+
+### Lessons Learned
+
+* Kubernetes workload readiness and application functionality are distinct validation requirements.
+* HTTP smoke tests can detect failures that basic frontend readiness probes do not expose.
+* Testing through the frontend reverse proxy validates multiple application components together.
+* Database-backed API tests provide evidence that migrations, connectivity, and seeded application data work together.
+* Immutable image digests preserve the identity of deployed application artifacts.
+* An ephemeral deployment environment provides repeatable validation without requiring persistent cloud infrastructure.
+* Infrastructure troubleshooting should distinguish observed failures from unconfirmed root-cause hypotheses.
