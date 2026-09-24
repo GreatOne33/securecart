@@ -172,6 +172,42 @@ jobs:
           echo "Frontend verified: ${ACTUAL_FRONTEND}"
           echo "Deployment validation passed."
 
+      - name: Run application smoke tests
+        run: |
+          set -euo pipefail
+
+          kubectl port-forward \
+            svc/securecart-service 8080:80 \
+            > /tmp/securecart-port-forward.log 2>&1 &
+
+          PORT_FORWARD_PID=$!
+
+          trap 'kill "${PORT_FORWARD_PID}" 2>/dev/null || true' EXIT
+
+          echo "Waiting for frontend port-forward..."
+
+          READY=false
+
+          for attempt in {1..30}; do
+            echo "Checking frontend availability (attempt ${attempt}/30)"
+
+            if curl --silent --fail \
+              http://127.0.0.1:8080/ > /dev/null; then
+              READY=true
+              break
+            fi
+
+            sleep 2
+          done
+
+          if [[ "${READY}" != "true" ]]; then
+            cat /tmp/securecart-port-forward.log
+            echo "Frontend port-forward did not become ready." >&2
+            exit 1
+          fi
+
+          bash scripts/smoke-test.sh
+
       - name: Collect deployment failure diagnostics
         if: ${{ failure() }}
         run: |
