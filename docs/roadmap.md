@@ -103,16 +103,22 @@
 - [x] Bind published container artifacts to the validated source commit
 - [x] Record immutable backend and frontend registry digests
 - [x] Validate automated GHCR publication and package authorization
-- [ ] Automate Kubernetes deployments
-- [ ] Add post-deployment validation
+- [x] Automate Kubernetes deployments
+- [x] Add post-deployment validation
 
 ---
 
 ## Phase 4 - AWS
 
-- [ ] Provision infrastructure with Terraform
+- [x] Establish Terraform remote state with native S3 state locking
+- [x] Provision AWS network foundation with Terraform
+- [x] Create multi-AZ VPC networking
+- [x] Configure public and private subnet routing
+- [x] Configure cost-conscious NAT egress for private workloads
+- [x] Add an S3 Gateway Endpoint for private S3 connectivity
+- [x] Validate infrastructure destroy and reproducible reconstruction
+- [x] Validate Terraform idempotency with a zero-change plan
 - [ ] Configure IAM Roles
-- [ ] Create VPC Networking
 - [ ] Deploy Amazon ECR
 - [ ] Deploy Amazon EKS
 - [ ] Configure AWS Load Balancer Controller
