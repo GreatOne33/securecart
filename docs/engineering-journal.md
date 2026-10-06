@@ -5032,3 +5032,85 @@ The deployment environment remains ephemeral. Persistent AWS infrastructure and 
 * Immutable image digests preserve the identity of deployed application artifacts.
 * An ephemeral deployment environment provides repeatable validation without requiring persistent cloud infrastructure.
 * Infrastructure troubleshooting should distinguish observed failures from unconfirmed root-cause hypotheses.
+
+## October 7, 2026 - AWS Infrastructure Foundation
+
+### Objective
+
+Begin SecureCart's AWS infrastructure phase by establishing a reproducible Terraform-managed network foundation for the future Amazon EKS deployment.
+
+The goal of this milestone was to build the underlying AWS network before introducing application hosting resources such as ECR, EKS, load balancers, or cloud-hosted Kubernetes workloads.
+
+### Terraform State and Provider Foundation
+
+Configured Terraform to use a shared Amazon S3 backend with a project-specific state key and native S3 state locking.
+
+The backend bucket is existing shared infrastructure and is intentionally outside the SecureCart Terraform lifecycle. Destroying the SecureCart environment therefore does not destroy the state-storage infrastructure required to manage it.
+
+The AWS provider is constrained through Terraform's dependency lock file, and project resources receive common project, environment, and management tags.
+
+No AWS credentials are stored in Terraform configuration or committed to the repository.
+
+### Network Architecture
+
+Provisioned a dedicated `10.20.0.0/16` VPC in `us-east-1` with DNS support and DNS hostnames enabled.
+
+The network spans two Availability Zones and contains four `/24` subnets:
+
+- Two public subnets for future internet-facing AWS infrastructure
+- Two private subnets for future SecureCart workloads
+
+Public and private workloads use separate route tables. The public subnets route internet-bound traffic through an Internet Gateway, while the private subnets have no direct route to the Internet Gateway.
+
+Kubernetes subnet discovery tags are applied in preparation for future AWS load balancer integration.
+
+### Private Workload Egress
+
+Provisioned one NAT Gateway in a public subnet and configured both private subnet route tables to use it for general outbound Internet access.
+
+Using a single NAT Gateway is an intentional cost optimization for the SecureCart lab environment. It reduces persistent infrastructure cost while introducing a single-AZ egress dependency and possible cross-AZ traffic from the second private subnet.
+
+A production environment requiring stronger availability would normally evaluate independent egress paths per Availability Zone.
+
+### Private S3 Connectivity
+
+Added an Amazon S3 Gateway Endpoint and associated it with both private route tables.
+
+This allows S3-bound traffic from private workloads to use the gateway endpoint rather than traversing the NAT Gateway.
+
+The NAT Gateway remains available for general outbound connectivity while the AWS architecture is developed incrementally. Additional private AWS service connectivity will be evaluated when those services are introduced rather than deploying interface endpoints preemptively.
+
+### Infrastructure Lifecycle Validation
+
+Validated the Terraform-managed network through its complete lifecycle.
+
+The initial infrastructure was successfully created and inspected. A Terraform destroy plan identified the SecureCart-managed resources without including the shared S3 state backend, and the environment was successfully destroyed.
+
+The same committed Terraform configuration was then used to reconstruct the network from an empty project state. The reconstruction created 19 Terraform-managed AWS resources with no manual recovery or recreation steps.
+
+A subsequent Terraform plan returned no changes, confirming that the applied infrastructure matched the declared configuration with no detected drift.
+
+The validated lifecycle is:
+
+```text
+Create → Validate → Destroy → Recreate → Zero-Change Plan
+```
+
+### Outcome
+
+SecureCart now has a reproducible AWS network foundation managed through Terraform.
+
+The environment can be destroyed to control lab costs and reconstructed from version-controlled infrastructure definitions rather than relying on manually preserved AWS resources.
+
+The network is currently available for the next AWS infrastructure milestones, including IAM integration, Amazon ECR, and Amazon EKS.
+
+### Lessons Learned
+
+- Remote Terraform state infrastructure should remain independent from the lifecycle of the environment it manages.
+- Reproducibility requires validating destruction and reconstruction, not only a successful initial apply.
+- A zero-change Terraform plan provides evidence that deployed infrastructure matches the declared configuration.
+- Cost optimization and high availability can impose competing infrastructure requirements.
+- A single NAT Gateway meets the lab's current cost goals but introduces an explicit availability tradeoff.
+- Private subnets can retain controlled outbound connectivity without directly exposing workloads to inbound Internet traffic.
+- Gateway endpoints can provide private service routing without requiring NAT traversal for supported AWS services.
+- Cloud infrastructure should be introduced incrementally so cost, security, and operational tradeoffs remain visible and explainable.

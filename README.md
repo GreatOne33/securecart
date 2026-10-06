@@ -8,7 +8,7 @@
 
 **Status:** In Progress
 
-**Current Phase:** DevOps Engineering
+**Current Phase:** AWS Infrastructure
 
 ### Phase 1 - Kubernetes Foundations ✅
 
@@ -75,11 +75,39 @@ Persistent Storage
 
 NetworkPolicies restrict communication between application tiers so that only explicitly authorized workloads can communicate with the frontend, backend, and database.
 
+### Phase 3 - DevOps Engineering ✅
+
+- Automated GitHub Actions continuous integration
+- Application and container security gates
+- Trusted container artifact publishing to GitHub Container Registry
+- Commit-derived image versioning and immutable digest recording
+- Helm-based application packaging and release management
+- Automated Kubernetes deployment using trusted published artifacts
+- Automated database migration during deployment
+- Post-deployment application smoke testing
+
+SecureCart's delivery pipeline now validates application changes, builds and security-scans container images, publishes trusted artifacts only after successful CI, deploys those artifacts to an ephemeral Kubernetes environment, and verifies application health after deployment.
+
+### Phase 4 - AWS Infrastructure 🚧
+
 Current milestone:
 
-- Automate Helm-based Kubernetes deployments
-- Consume trusted published container artifacts during deployment
-- Add post-deployment validation
+- Terraform remote state with native S3 state locking
+- Multi-AZ VPC across `us-east-1a` and `us-east-1b`
+- Public subnets for internet-facing infrastructure
+- Private subnets for application workloads
+- Internet Gateway and public routing
+- Cost-conscious NAT egress for private workloads
+- S3 Gateway Endpoint for private S3 connectivity
+- Kubernetes subnet discovery tags
+- Reproducible infrastructure creation and destruction
+- Zero-drift Terraform validation
+
+Next:
+
+- Configure AWS IAM roles
+- Deploy Amazon ECR
+- Deploy Amazon EKS
 
 SecureCart is an ongoing engineering project designed to simulate the work of a Cloud Infrastructure / Platform Engineer. The project follows production-style engineering practices including Infrastructure as Code, Git-based workflows, documentation, containerization, application networking, persistent storage, and Kubernetes deployments.
 
@@ -490,7 +518,11 @@ Network Boundaries:
 
 ### Infrastructure as Code
 
-- Terraform *(planned)*
+- Terraform
+- Remote state with Amazon S3
+- Native S3 state locking
+- AWS VPC infrastructure provisioning
+- Reproducible infrastructure lifecycle validation
 
 ### DevOps
 
@@ -1126,104 +1158,38 @@ Project documentation is maintained throughout development.
 
 ## 🚀 Current Focus
 
-**Current milestone:** Secure CI/CD automation with GitHub Actions
+**Current milestone:** AWS infrastructure foundation with Terraform
 
-SecureCart has completed its initial Helm packaging and release-management milestone.
+SecureCart has entered Phase 4, extending the locally validated Kubernetes and DevOps platform into AWS. The first AWS milestone establishes the network foundation that will support the project's container registry, EKS cluster, load balancing, and eventual cloud deployment.
 
-SecureCart now includes an eight-job GitHub Actions continuous integration pipeline. Every push and pull request to `main` validates backend syntax and application imports, executes backend API contract tests, builds both application container images, validates the Helm deployment package, scans repository history for secrets, audits Python dependencies, scans the built container images for actionable vulnerabilities, and scans rendered Kubernetes manifests for HIGH and CRITICAL configuration findings before changes progress further through the delivery lifecycle.
+The current AWS foundation includes:
 
-After successful CI validation on `main`, a separate trusted artifact publishing workflow checks out the exact validated commit, rebuilds and scans the backend and frontend images, and publishes them to GitHub Container Registry using commit-derived tags. The workflow then records immutable registry digests for the published artifacts. Registry write access remains isolated from the general CI validation workflow.
+- Terraform-managed infrastructure in `us-east-1`
+- Remote Terraform state stored in Amazon S3 with native state locking
+- A dedicated `10.20.0.0/16` VPC with DNS support and DNS hostnames enabled
+- Public and private subnets distributed across two Availability Zones
+- Kubernetes subnet discovery tags for future AWS load balancer integration
+- Internet Gateway connectivity for public infrastructure
+- Separate public and private route tables
+- A single NAT Gateway for cost-conscious private workload egress
+- An S3 Gateway Endpoint associated with the private route tables
+- Project-wide Terraform resource tagging
 
-The application now includes:
+The single NAT Gateway is an intentional lab cost optimization. Both private subnets currently share one NAT Gateway rather than deploying one per Availability Zone. This reduces the cost of the learning environment while accepting a single-AZ egress dependency that would normally be addressed in a production design.
 
-- Version-controlled PostgreSQL schema migrations with Alembic
-- Idempotent database seed automation
-- Kubernetes database migration Job
-- Persistent PostgreSQL storage
-- Least-privilege application NetworkPolicies
-- Hardened non-root frontend and backend containers
-- Read-only application root filesystems
-- Dropped Linux capabilities and disabled privilege escalation
-- Versioned application container images
-- GitHub Container Registry publishing
-- Automated trusted container artifact publishing after successful CI
-- Commit-derived backend and frontend image tags
-- Immutable published artifact digest recording
-- Helm-based Kubernetes application packaging
-- Parameterized deployment configuration through `values.yaml`
-- Helm release ownership and revision history
-- Validated Helm upgrade and rollback workflows
-- End-to-end HTTPS application validation
-- GitHub Actions continuous integration
-- Automated backend syntax and application import validation
-- Automated frontend and backend container build validation
-- Automated Helm linting and manifest rendering
-- Least-privilege GitHub Actions workflow permissions
-- Gitleaks secret detection security gate
-- Full-history repository secret scanning
-- Controlled secret-detection gate validation
-- Python dependency vulnerability scanning with `pip-audit`
-- Controlled dependency vulnerability gate validation
-- Frontend and backend container vulnerability scanning with Trivy
-- Fixable HIGH and CRITICAL container vulnerability enforcement
-- Controlled container vulnerability fail-closed validation
-- Helm pre-install and pre-upgrade database migration hooks
+The S3 Gateway Endpoint provides private S3 routing from the private subnets without sending S3 traffic through the NAT Gateway. This establishes a foundation for future private AWS service access while retaining general outbound connectivity during the initial EKS implementation.
 
-SecureCart's CI security controls have been validated through controlled failure and recovery tests. Gitleaks blocked a synthetic credential pattern, `pip-audit` blocked an isolated pull request containing `urllib3==1.26.5` with 10 known vulnerabilities, Trivy image scanning blocked a deliberately regressed backend image containing three fixable HIGH-severity operating-system vulnerabilities, and Trivy configuration scanning blocked a deliberately weakened Kubernetes backend workload with a HIGH-severity writable-root-filesystem finding. The backend API test gate was also validated with a controlled response-contract regression. In each case, remediation returned the CI pipeline to a passing state.
+The infrastructure lifecycle has been validated end to end. SecureCart's Terraform-managed AWS network was created, inspected, completely destroyed, reconstructed from the committed configuration, and verified with a subsequent zero-change plan. This demonstrates that the environment can be reproduced from code without depending on manually preserved AWS resources.
 
-The current deployment lifecycle is:
+The next AWS milestones are:
 
-```text
-Application Source
-       |
-       v
-Container Images
-       |
-       v
-GitHub Container Registry
-       |
-       v
-    Helm Chart
-       |
-       v
-Pre-Install / Pre-Upgrade
- Database Migration Hook
-       |
-       v
-   Helm Release
-       |
-       v
-Kubernetes Workloads
-       |
-       +------> Frontend / Backend
-       |
-       +------> PostgreSQL
-```
+- Configure AWS IAM roles and workload identity
+- Deploy private Amazon ECR repositories for SecureCart application images
+- Deploy Amazon EKS into the existing VPC
+- Integrate AWS load balancing and HTTPS
+- Deploy SecureCart to AWS using the existing Helm release model
 
-The current Helm release lifecycle supports:
-
-```text
-helm install
-     |
-     v
-Release Revision
-     |
-     v
-helm upgrade
-     |
-     v
-New Revision
-     |
-     v
-helm rollback
-```
-
-Upcoming work:
-
-- Automate Helm-based Kubernetes deployments using trusted published artifacts
-- Add post-deployment validation
-
-**Long-term goal:** Deploy SecureCart to Amazon EKS using Terraform, Helm, and GitHub Actions.
+The long-term deployment goal remains a reproducible SecureCart environment built with Terraform, Kubernetes, Helm, GitHub Actions, and AWS using least-privilege identity and cost-conscious infrastructure decisions.
 
 ---
 

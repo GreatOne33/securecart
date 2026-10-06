@@ -3,8 +3,13 @@
 .venv/
 
 # Terraform
+.terraform/
 *.tfstate
 *.tfstate.*
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
 
 # Environment files
 .env
