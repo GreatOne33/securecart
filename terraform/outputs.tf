@@ -18,3 +18,13 @@ output "private_subnet_ids" {
     aws_subnet.private_b.id
   ]
 }
+
+output "frontend_ecr_repository_url" {
+  description = "URL of the SecureCart frontend ECR repository"
+  value       = aws_ecr_repository.frontend.repository_url
+}
+
+output "backend_ecr_repository_url" {
+  description = "URL of the SecureCart backend ECR repository"
+  value       = aws_ecr_repository.backend.repository_url
+}
