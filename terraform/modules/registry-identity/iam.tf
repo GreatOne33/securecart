@@ -30,9 +30,7 @@ data "aws_iam_policy_document" "github_actions_assume_role" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values = [
-        "repo:GreatOne33/securecart:ref:refs/heads/main"
-      ]
+      values   = ["repo:GreatOne33@173399426/securecart@1314342375:ref:refs/heads/main"]
     }
   }
 }
