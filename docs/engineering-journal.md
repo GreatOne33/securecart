@@ -5114,3 +5114,99 @@ The network is currently available for the next AWS infrastructure milestones, i
 - Private subnets can retain controlled outbound connectivity without directly exposing workloads to inbound Internet traffic.
 - Gateway endpoints can provide private service routing without requiring NAT traversal for supported AWS services.
 - Cloud infrastructure should be introduced incrementally so cost, security, and operational tradeoffs remain visible and explainable.
+
+## October 22, 2026 - Terraform Modularization and State Isolation
+
+### Objective
+
+Refactor SecureCart's original combined Terraform configuration into reusable infrastructure modules and independently managed lab environments.
+
+The goals were to improve infrastructure maintainability, establish clear Terraform state ownership, and reduce unnecessary AWS lab costs.
+
+### Reusable Terraform Modules
+
+Created two reusable infrastructure modules:
+
+- `terraform/modules/network` manages the VPC, public and private subnets, route tables, Internet Gateway, optional NAT Gateway, and S3 Gateway Endpoint.
+- `terraform/modules/registry-identity` manages SecureCart's Amazon ECR repositories and GitHub Actions OIDC publishing identity.
+
+Created independent Terraform roots:
+
+- `terraform/environments/lab/network`
+- `terraform/environments/lab/registry`
+
+Each environment root invokes its corresponding module and manages its own provider configuration, variables, outputs, and remote state.
+
+### Terraform State Isolation
+
+Configured separate S3 backend state keys:
+
+- `projects/securecart/lab/network/terraform.tfstate`
+- `projects/securecart/lab/registry/terraform.tfstate`
+
+Both roots use the existing shared S3 backend bucket with encryption and native S3 state locking.
+
+This separation allows networking and registry infrastructure to be planned and managed independently.
+
+The shared backend bucket remains outside the SecureCart infrastructure lifecycle.
+
+### Network Cost Optimization
+
+Refactored NAT Gateway provisioning behind the `enable_nat_gateway` boolean variable.
+
+The default value is `false`, preventing the network module from provisioning a NAT Gateway, NAT Elastic IP, or private internet default routes unless explicitly enabled.
+
+This reduces persistent lab infrastructure costs while preserving the ability to enable outbound internet access when future workloads require it.
+
+The S3 Gateway Endpoint remains configured for private subnet access to Amazon S3.
+
+Additional private connectivity requirements will be evaluated before deploying workloads that depend on outbound AWS service access.
+
+### Legacy Terraform Root Retirement
+
+Verified that the original combined Terraform root had no managed resources recorded in its remote state.
+
+Reviewed the original configuration, outputs, backend settings, and tracked repository references before retiring the legacy root-level Terraform files.
+
+The historical remote state object was not deleted or modified.
+
+Added Git ignore rules for saved Terraform execution plans to prevent potentially sensitive plan artifacts from being committed.
+
+### Validation
+
+Successfully initialized and validated the independent Terraform environment roots.
+
+The network root passed formatting and configuration validation.
+
+The final network plan proposed:
+
+- 15 resources to add
+- 0 resources to change
+- 0 resources to destroy
+
+The plan contained no NAT Gateway, NAT Elastic IP, or private internet default routes.
+
+The registry root was separately validated and planned with 8 resources to add, 0 to change, and 0 to destroy.
+
+No Terraform apply was performed during this refactor. The new infrastructure roots have not yet been deployed.
+
+The network refactor and legacy root retirement were preserved in Git commit `fd39170`.
+
+### Outcome
+
+SecureCart now has modular Terraform infrastructure with separate environment roots and isolated remote state.
+
+The network configuration supports cost-controlled deployment without a NAT Gateway by default.
+
+Both infrastructure roots are ready for future controlled deployment and validation.
+
+### Lessons Learned
+
+- Terraform modules promote reuse, while environment roots define deployment boundaries and state ownership.
+- Separate Terraform states reduce the scope of infrastructure changes and simplify lifecycle management.
+- Terraform state ownership must be verified before retiring resource definitions.
+- An empty Terraform state does not prove that matching AWS resources do not exist.
+- Optional infrastructure components allow lab costs to be controlled without removing future capabilities.
+- Terraform validation and planning establish configuration readiness but do not prove successful AWS deployment.
+- Saved Terraform plans should be excluded from version control because they may contain sensitive information.
+- Historical engineering documentation should distinguish previously deployed infrastructure from the current deployment state.

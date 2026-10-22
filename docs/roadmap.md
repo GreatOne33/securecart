@@ -118,6 +118,24 @@
 - [x] Add an S3 Gateway Endpoint for private S3 connectivity
 - [x] Validate infrastructure destroy and reproducible reconstruction
 - [x] Validate Terraform idempotency with a zero-change plan
+
+### Terraform Architecture Refactor
+
+- [x] Extract reusable Terraform network module
+- [x] Extract reusable Terraform registry and identity module
+- [x] Create independent lab network and registry environment roots
+- [x] Isolate network and registry Terraform remote state
+- [x] Make NAT Gateway optional and disabled by default
+- [x] Retire legacy Terraform root after verifying empty state
+- [x] Exclude saved Terraform plans from Git
+- [x] Validate modular network Terraform configuration
+- [x] Validate modular registry and identity Terraform configuration
+- [x] Review network plan: 15 additions, no changes or destroys
+- [x] Review registry plan: 8 additions, no changes or destroys
+- [ ] Deploy and verify modular registry and identity infrastructure
+- [ ] Deploy and verify modular network infrastructure
+- [ ] Evaluate private workload egress requirements before EKS deployment
+
 - [ ] Configure IAM Roles
 - [ ] Deploy Amazon ECR
 - [ ] Deploy Amazon EKS
