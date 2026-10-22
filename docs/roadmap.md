@@ -132,12 +132,12 @@
 - [x] Validate modular registry and identity Terraform configuration
 - [x] Review network plan: 15 additions, no changes or destroys
 - [x] Review registry plan: 8 additions, no changes or destroys
-- [ ] Deploy and verify modular registry and identity infrastructure
+- [x] Deploy and verify modular registry and identity infrastructure
 - [ ] Deploy and verify modular network infrastructure
 - [ ] Evaluate private workload egress requirements before EKS deployment
 
-- [ ] Configure IAM Roles
-- [ ] Deploy Amazon ECR
+- [x] Configure IAM Roles
+- [x] Deploy Amazon ECR
 - [ ] Deploy Amazon EKS
 - [ ] Configure AWS Load Balancer Controller
 - [ ] External DNS
