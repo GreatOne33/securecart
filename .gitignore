@@ -241,3 +241,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Terraform saved execution plans
+*.tfplan
+*.tfplan.*

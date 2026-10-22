@@ -18,10 +18,19 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
 
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: >-
+          ${{
+            github.event.workflow_run.conclusion == 'success' &&
+            github.event.workflow_run.head_repository.full_name == 'GreatOne33/securecart' &&
+            github.event.workflow_run.head_branch == 'main' &&
+            github.event.workflow_run.event == 'push'
+          }}
     runs-on: ubuntu-latest
-
+    concurrency:
+      group: securecart-publish-${{ github.event.workflow_run.head_sha }}
+      cancel-in-progress: false
     env:
       REGISTRY: ghcr.io
       BACKEND_IMAGE: ghcr.io/greatone33/securecart-backend
@@ -72,6 +81,23 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_PUBLISH_ROLE_ARN }}
+          aws-region: us-east-1
+          role-session-name: securecart-ecr-publish
+
+      - name: Verify AWS identity
+        run: |
+          aws sts get-caller-identity \
+            --query '{Account:Account,Arn:Arn}' \
+            --output json
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -83,6 +109,97 @@ jobs:
         run: |
           docker push "${BACKEND_IMAGE}:${IMAGE_TAG}"
           docker push "${FRONTEND_IMAGE}:${IMAGE_TAG}"
+
+      - name: Publish trusted images to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+
+          publish_to_ecr() {
+            local source_image="$1"
+            local repository="$2"
+            local target_image="${ECR_REGISTRY}/${repository}:${IMAGE_TAG}"
+            local source_digest
+            local existing_digest
+            local lookup_result
+            local published_digest
+
+            # Identify the artifact already published to GHCR.
+            source_digest="$(docker buildx imagetools inspect \
+              "${source_image}:${IMAGE_TAG}" \
+              --format '{{json .Manifest.Digest}}' | tr -d '"')"
+
+            if [[ ! "${source_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::Invalid GHCR manifest digest"
+              exit 1
+            fi
+
+            # Retrieve the complete ECR response.
+            lookup_result="$(aws ecr batch-get-image \
+              --repository-name "${repository}" \
+              --image-ids "imageTag=${IMAGE_TAG}" \
+              --output json)"
+
+            # Case 1: ECR explicitly confirms that the tag is missing.
+            if jq -e --arg tag "${IMAGE_TAG}" '
+              (.images | length) == 0 and
+              (.failures | length) == 1 and
+              .failures[0].failureCode == "ImageNotFound" and
+              .failures[0].imageId.imageTag == $tag
+            ' <<< "${lookup_result}" > /dev/null; then
+
+              echo "ECR tag absent. Publishing ${target_image}"
+
+              docker tag \
+                "${source_image}:${IMAGE_TAG}" \
+                "${target_image}"
+
+              docker push "${target_image}"
+
+              published_digest="$(docker buildx imagetools inspect \
+                "${target_image}" \
+                --format '{{json .Manifest.Digest}}' | tr -d '"')"
+
+              if [[ "${published_digest}" != "${source_digest}" ]]; then
+                echo "::error::ECR digest differs from GHCR"
+                echo "Expected: ${source_digest}"
+                echo "Published: ${published_digest}"
+                exit 1
+              fi
+
+              echo "ECR artifact verified: ${target_image}@${published_digest}"
+
+            else
+              # Case 2: Validate the existing ECR image response.
+              # Unexpected responses fail rather than triggering a push.
+              existing_digest="$(jq -er --arg tag "${IMAGE_TAG}" '
+                if
+                  (.images | length) == 1 and
+                  (.failures | length) == 0 and
+                  .images[0].imageId.imageTag == $tag and
+                  (.images[0].imageId.imageDigest | type) == "string" and
+                  (.images[0].imageId.imageDigest | test("^sha256:[0-9a-f]{64}$"))
+                then
+                  .images[0].imageId.imageDigest
+                else
+                  error("Unexpected ECR lookup response")
+                end
+              ' <<< "${lookup_result}")"
+
+              if [[ "${existing_digest}" == "${source_digest}" ]]; then
+                echo "ECR tag already contains the expected artifact. Skipping."
+              else
+                echo "::error::ECR immutable tag conflict for ${target_image}"
+                echo "Expected: ${source_digest}"
+                echo "Existing: ${existing_digest}"
+                exit 1
+              fi
+            fi
+          }
+
+          publish_to_ecr "${BACKEND_IMAGE}" "securecart/backend"
+          publish_to_ecr "${FRONTEND_IMAGE}" "securecart/frontend"
 
       - name: Record published artifact digests
         run: |
@@ -107,5 +224,34 @@ jobs:
             echo "Source commit: ${{ github.event.workflow_run.head_sha }}"
             echo "Backend: ${BACKEND_IMAGE}@${BACKEND_DIGEST}"
             echo "Frontend: ${FRONTEND_IMAGE}@${FRONTEND_DIGEST}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record Amazon ECR artifact digests
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          ECR_BACKEND_IMAGE="${ECR_REGISTRY}/securecart/backend"
+          ECR_FRONTEND_IMAGE="${ECR_REGISTRY}/securecart/frontend"
+
+          BACKEND_DIGEST="$(docker buildx imagetools inspect \
+            "${ECR_BACKEND_IMAGE}:${IMAGE_TAG}" \
+            --format '{{json .Manifest.Digest}}' | tr -d '"')"
+
+          FRONTEND_DIGEST="$(docker buildx imagetools inspect \
+            "${ECR_FRONTEND_IMAGE}:${IMAGE_TAG}" \
+            --format '{{json .Manifest.Digest}}' | tr -d '"')"
+
+          test -n "${BACKEND_DIGEST}"
+          test -n "${FRONTEND_DIGEST}"
+
+          {
+            echo
+            echo "### Amazon ECR Trusted Artifacts"
+            echo
+            echo '```text'
+            echo "Source commit: ${{ github.event.workflow_run.head_sha }}"
+            echo "Backend: ${ECR_BACKEND_IMAGE}@${BACKEND_DIGEST}"
+            echo "Frontend: ${ECR_FRONTEND_IMAGE}@${FRONTEND_DIGEST}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

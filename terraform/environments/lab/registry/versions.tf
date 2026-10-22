@@ -10,7 +10,7 @@ terraform {
 
   backend "s3" {
     bucket       = "aws3-labs-tf-collections"
-    key          = "projects/securecart/terraform.tfstate"
+    key          = "projects/securecart/lab/registry/terraform.tfstate"
     region       = "us-east-1"
     encrypt      = true
     use_lockfile = true

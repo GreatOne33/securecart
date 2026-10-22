@@ -3,7 +3,7 @@ data "aws_availability_zones" "available" {
 }
 
 resource "aws_vpc" "main" {
-  cidr_block = "10.20.0.0/16"
+  cidr_block = var.vpc_cidr
 
   enable_dns_support   = true
   enable_dns_hostnames = true
@@ -15,7 +15,7 @@ resource "aws_vpc" "main" {
 
 resource "aws_subnet" "public_a" {
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.20.0.0/24"
+  cidr_block              = var.public_subnet_cidrs[0]
   availability_zone       = data.aws_availability_zones.available.names[0]
   map_public_ip_on_launch = true
 
@@ -27,7 +27,7 @@ resource "aws_subnet" "public_a" {
 
 resource "aws_subnet" "public_b" {
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.20.1.0/24"
+  cidr_block              = var.public_subnet_cidrs[1]
   availability_zone       = data.aws_availability_zones.available.names[1]
   map_public_ip_on_launch = true
 
@@ -39,7 +39,7 @@ resource "aws_subnet" "public_b" {
 
 resource "aws_subnet" "private_a" {
   vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.20.10.0/24"
+  cidr_block        = var.private_subnet_cidrs[0]
   availability_zone = data.aws_availability_zones.available.names[0]
 
   tags = {
@@ -50,7 +50,7 @@ resource "aws_subnet" "private_a" {
 
 resource "aws_subnet" "private_b" {
   vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.20.11.0/24"
+  cidr_block        = var.private_subnet_cidrs[1]
   availability_zone = data.aws_availability_zones.available.names[1]
 
   tags = {
@@ -118,6 +118,7 @@ resource "aws_route_table_association" "private_b" {
 }
 
 resource "aws_eip" "nat" {
+  count  = var.enable_nat_gateway ? 1 : 0
   domain = "vpc"
 
   tags = {
@@ -126,7 +127,9 @@ resource "aws_eip" "nat" {
 }
 
 resource "aws_nat_gateway" "main" {
-  allocation_id = aws_eip.nat.id
+  count = var.enable_nat_gateway ? 1 : 0
+
+  allocation_id = aws_eip.nat[0].id
   subnet_id     = aws_subnet.public_a.id
 
   tags = {
@@ -137,15 +140,19 @@ resource "aws_nat_gateway" "main" {
 }
 
 resource "aws_route" "private_a_internet" {
+  count = var.enable_nat_gateway ? 1 : 0
+
   route_table_id         = aws_route_table.private_a.id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.main.id
+  nat_gateway_id         = aws_nat_gateway.main[0].id
 }
 
 resource "aws_route" "private_b_internet" {
+  count = var.enable_nat_gateway ? 1 : 0
+
   route_table_id         = aws_route_table.private_b.id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.main.id
+  nat_gateway_id         = aws_nat_gateway.main[0].id
 }
 
 resource "aws_vpc_endpoint" "s3" {

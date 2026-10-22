@@ -1,17 +1,17 @@
 variable "aws_region" {
-  description = "AWS region used to deploy SecureCart infrastructure"
+  description = "AWS region for SecureCart registry infrastructure"
   type        = string
   default     = "us-east-1"
 }
 
 variable "project_name" {
-  description = "Project name used for resource naming and tagging"
+  description = "Project name used for resource naming"
   type        = string
   default     = "securecart"
 }
 
 variable "environment" {
-  description = "Deployment environment for SecureCart"
+  description = "Deployment environment"
   type        = string
   default     = "lab"
 }

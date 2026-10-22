@@ -5114,3 +5114,232 @@ The network is currently available for the next AWS infrastructure milestones, i
 - Private subnets can retain controlled outbound connectivity without directly exposing workloads to inbound Internet traffic.
 - Gateway endpoints can provide private service routing without requiring NAT traversal for supported AWS services.
 - Cloud infrastructure should be introduced incrementally so cost, security, and operational tradeoffs remain visible and explainable.
+
+## October 22, 2026 - Terraform Modularization and State Isolation
+
+### Objective
+
+Refactor SecureCart's original combined Terraform configuration into reusable infrastructure modules and independently managed lab environments.
+
+The goals were to improve infrastructure maintainability, establish clear Terraform state ownership, and reduce unnecessary AWS lab costs.
+
+### Reusable Terraform Modules
+
+Created two reusable infrastructure modules:
+
+- `terraform/modules/network` manages the VPC, public and private subnets, route tables, Internet Gateway, optional NAT Gateway, and S3 Gateway Endpoint.
+- `terraform/modules/registry-identity` manages SecureCart's Amazon ECR repositories and GitHub Actions OIDC publishing identity.
+
+Created independent Terraform roots:
+
+- `terraform/environments/lab/network`
+- `terraform/environments/lab/registry`
+
+Each environment root invokes its corresponding module and manages its own provider configuration, variables, outputs, and remote state.
+
+### Terraform State Isolation
+
+Configured separate S3 backend state keys:
+
+- `projects/securecart/lab/network/terraform.tfstate`
+- `projects/securecart/lab/registry/terraform.tfstate`
+
+Both roots use the existing shared S3 backend bucket with encryption and native S3 state locking.
+
+This separation allows networking and registry infrastructure to be planned and managed independently.
+
+The shared backend bucket remains outside the SecureCart infrastructure lifecycle.
+
+### Network Cost Optimization
+
+Refactored NAT Gateway provisioning behind the `enable_nat_gateway` boolean variable.
+
+The default value is `false`, preventing the network module from provisioning a NAT Gateway, NAT Elastic IP, or private internet default routes unless explicitly enabled.
+
+This reduces persistent lab infrastructure costs while preserving the ability to enable outbound internet access when future workloads require it.
+
+The S3 Gateway Endpoint remains configured for private subnet access to Amazon S3.
+
+Additional private connectivity requirements will be evaluated before deploying workloads that depend on outbound AWS service access.
+
+### Legacy Terraform Root Retirement
+
+Verified that the original combined Terraform root had no managed resources recorded in its remote state.
+
+Reviewed the original configuration, outputs, backend settings, and tracked repository references before retiring the legacy root-level Terraform files.
+
+The historical remote state object was not deleted or modified.
+
+Added Git ignore rules for saved Terraform execution plans to prevent potentially sensitive plan artifacts from being committed.
+
+### Validation
+
+Successfully initialized and validated the independent Terraform environment roots.
+
+The network root passed formatting and configuration validation.
+
+The final network plan proposed:
+
+- 15 resources to add
+- 0 resources to change
+- 0 resources to destroy
+
+The plan contained no NAT Gateway, NAT Elastic IP, or private internet default routes.
+
+The registry root was separately validated and planned with 8 resources to add, 0 to change, and 0 to destroy.
+
+No Terraform apply was performed during this refactor. The new infrastructure roots have not yet been deployed.
+
+The network refactor and legacy root retirement were preserved in Git commit `fd39170`.
+
+### Outcome
+
+SecureCart now has modular Terraform infrastructure with separate environment roots and isolated remote state.
+
+The network configuration supports cost-controlled deployment without a NAT Gateway by default.
+
+Both infrastructure roots are ready for future controlled deployment and validation.
+
+### Lessons Learned
+
+- Terraform modules promote reuse, while environment roots define deployment boundaries and state ownership.
+- Separate Terraform states reduce the scope of infrastructure changes and simplify lifecycle management.
+- Terraform state ownership must be verified before retiring resource definitions.
+- An empty Terraform state does not prove that matching AWS resources do not exist.
+- Optional infrastructure components allow lab costs to be controlled without removing future capabilities.
+- Terraform validation and planning establish configuration readiness but do not prove successful AWS deployment.
+- Saved Terraform plans should be excluded from version control because they may contain sensitive information.
+- Historical engineering documentation should distinguish previously deployed infrastructure from the current deployment state.
+
+## October 22, 2026 - AWS Registry and Identity Deployment
+
+### Objective
+
+Deploy and validate SecureCart's modular AWS registry and identity infrastructure using Terraform.
+
+Establish secure Amazon ECR repositories and GitHub Actions workload identity federation while maintaining independent Terraform state and avoiding unnecessary AWS networking costs.
+
+### Predeployment Verification
+
+Verified that the target AWS account did not contain the SecureCart ECR repositories or GitHub Actions OIDC provider.
+
+Inspected the existing ECR registry scanning configuration, which used BASIC scanning without explicit repository rules.
+
+Generated and reviewed a saved Terraform execution plan.
+
+The plan proposed:
+
+- 8 resources to add
+- 0 resources to change
+- 0 resources to destroy
+
+### Infrastructure Deployment
+
+Applied the approved saved Terraform plan from:
+
+`terraform/environments/lab/registry`
+
+Terraform successfully created eight resources:
+
+- Two Amazon ECR repositories
+- Two ECR lifecycle policies
+- One ECR registry scanning configuration
+- One GitHub Actions OIDC provider
+- One IAM publishing role
+- One IAM publishing policy
+
+The deployment completed without errors.
+
+### Container Registry Security
+
+Created the following repositories:
+
+- `securecart/frontend`
+- `securecart/backend`
+
+Verified both repositories use:
+
+- Immutable image tags
+- AES256 encryption at rest
+- Project and environment resource tags
+
+Configured lifecycle policies to expire untagged images after one day and retain the 10 most recent images matching the `sha-` tag prefix.
+
+Configured BASIC vulnerability scanning with SCAN_ON_PUSH for repositories matching `securecart/*`.
+
+Verified repository configuration, lifecycle policies, and registry scanning settings independently using the AWS CLI.
+
+### GitHub Actions Workload Identity
+
+Created the GitHub Actions OIDC identity provider and the IAM role:
+
+`securecart-github-ecr-publisher`
+
+Verified that the role trust policy requires:
+
+- Federated authentication using GitHub Actions OIDC
+- Audience `sts.amazonaws.com`
+- Repository `GreatOne33/securecart`
+- Branch `main`
+
+The trust policy uses exact StringEquals conditions.
+
+Verified that the role's inline IAM policy permits ECR authentication and image publishing operations restricted to the SecureCart frontend and backend repositories.
+
+Confirmed that no additional managed IAM policies are attached to the role.
+
+### Postdeployment Validation
+
+Executed a Terraform plan after deployment.
+
+Terraform refreshed the managed resources and reported:
+
+`No changes. Your infrastructure matches the configuration.`
+
+Independently verified:
+
+- Both ECR repositories exist
+- Both repositories enforce immutable tags
+- Both repositories use AES256 encryption
+- Both lifecycle policies match the declared rules
+- BASIC scan-on-push configuration matches the declared repository filter
+- GitHub OIDC trust policy matches the intended repository and branch
+- IAM publishing permissions are scoped to the intended repositories
+- No managed IAM policies are attached to the publishing role
+
+### Cost and Lifecycle Considerations
+
+No EKS cluster, EC2 instances, NAT Gateway, or additional VPC infrastructure was deployed during this milestone.
+
+ECR image storage may incur charges as images are published.
+
+The repositories use `force_delete = true` for the lab environment. A future Terraform destroy could therefore remove repositories and their stored images.
+
+Registry scanning configuration is managed at the AWS account and region level, even though the configured rule targets SecureCart repositories.
+
+### Outcome
+
+SecureCart's modular registry and identity infrastructure is deployed and validated in AWS.
+
+The Terraform configuration produced a successful deployment followed by a zero-change plan.
+
+The infrastructure is ready for GitHub Actions integration testing.
+
+### Remaining Work
+
+- Validate GitHub Actions OIDC authentication against the deployed IAM role
+- Publish frontend and backend container images to Amazon ECR
+- Verify image digests and vulnerability scan results
+- Deploy and validate the independent modular network environment when approved
+- Evaluate private workload connectivity before Amazon EKS deployment
+
+### Lessons Learned
+
+- Saved Terraform plans support controlled infrastructure deployments.
+- A successful apply should be followed by drift detection and independent AWS verification.
+- OIDC federation avoids storing long-lived AWS credentials in CI/CD systems.
+- IAM trust policies and permission policies protect different security boundaries.
+- Immutable container tags strengthen artifact integrity.
+- Lifecycle policies help control container registry storage growth.
+- Registry-level settings require consideration of their wider AWS account impact.
+- Infrastructure deployment and application integration testing are separate validation milestones.
