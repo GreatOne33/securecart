@@ -135,9 +135,27 @@
 - [x] Deploy and verify modular registry and identity infrastructure
 - [ ] Deploy and verify modular network infrastructure
 - [ ] Evaluate private workload egress requirements before EKS deployment
-
 - [x] Configure IAM Roles
 - [x] Deploy Amazon ECR
+
+### GitHub OIDC and Trusted Artifact Publishing
+
+- [x] Configure GitHub Actions OIDC federation with AWS
+- [x] Configure least-privilege IAM permissions for ECR publishing
+- [x] Diagnose GitHub immutable OIDC subject mismatch
+- [x] Correct IAM trust policy using exact immutable subject matching
+- [x] Validate GitHub Actions authentication using AWS STS
+- [x] Publish frontend and backend images to Amazon ECR
+- [x] Verify matching container image digests across GHCR and ECR
+- [x] Independently verify published ECR images using AWS CLI
+- [x] Remove temporary OIDC diagnostic and validate workflow
+- [x] Validate controlled teardown of registry and identity infrastructure
+- [ ] Merge OIDC diagnostic cleanup PR
+- [ ] Redeploy registry and identity infrastructure before further ECR testing
+- [ ] Revalidate trusted publishing after infrastructure restoration
+
+### AWS Kubernetes Deployment
+
 - [ ] Deploy Amazon EKS
 - [ ] Configure AWS Load Balancer Controller
 - [ ] External DNS

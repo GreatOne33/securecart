@@ -5343,3 +5343,201 @@ The infrastructure is ready for GitHub Actions integration testing.
 - Lifecycle policies help control container registry storage growth.
 - Registry-level settings require consideration of their wider AWS account impact.
 - Infrastructure deployment and application integration testing are separate validation milestones.
+
+## October 27, 2026 - GitHub OIDC Authentication and Trusted Artifact Publishing Validation
+
+### Objective
+
+Complete end-to-end validation of SecureCart's trusted container artifact publishing pipeline.
+
+The integration must authenticate GitHub Actions to AWS using OIDC federation, publish frontend and backend images to GitHub Container Registry (GHCR) and Amazon Elastic Container Registry (ECR), and verify artifact integrity across both registries.
+
+### Initial Authentication Failure
+
+The Trusted Artifact Publishing workflow initially failed during AWS credential configuration.
+
+AWS Security Token Service (STS) rejected the GitHub Actions workload identity with:
+
+`Not authorized to perform sts:AssumeRoleWithWebIdentity`
+
+The IAM role existed, the GitHub OIDC provider was configured, and the workflow requested the required identity-token permission.
+
+The failure indicated that AWS could not authorize the presented workload identity against the IAM role's trust policy.
+
+### Investigation
+
+Reviewed the following components:
+
+- GitHub Actions workflow permissions and execution context
+- AWS IAM OIDC identity provider
+- IAM role trust policy
+- GitHub repository configuration
+- AWS CloudTrail authorization failures
+
+The existing IAM trust policy expected the conventional GitHub OIDC subject:
+
+`repo:GreatOne33/securecart:ref:refs/heads/main`
+
+A temporary diagnostic step was introduced into the publishing workflow to inspect selected claims from the GitHub-issued OIDC token.
+
+The diagnostic revealed that GitHub was using an immutable subject format:
+
+`repo:GreatOne33@173399426/securecart@1314342375:ref:refs/heads/main`
+
+The token audience remained:
+
+`sts.amazonaws.com`
+
+The workflow was executing against the intended repository and `main` branch.
+
+### Root Cause
+
+The GitHub repository was configured to use immutable OIDC subject identifiers.
+
+These identifiers incorporate repository and owner identity information, protecting workload identity against certain repository-name reuse scenarios.
+
+The IAM trust policy expected the conventional repository-name subject, while GitHub presented the immutable subject.
+
+Because the IAM condition used exact string matching, AWS correctly denied the role-assumption request.
+
+The failure was caused by an identity-claim mismatch rather than missing ECR permissions.
+
+### Security Remediation
+
+Updated the Terraform-managed IAM role trust policy to match the exact immutable GitHub OIDC subject.
+
+Preserved the existing security restrictions:
+
+- Federated authentication through the configured GitHub OIDC provider
+- Audience restricted to `sts.amazonaws.com`
+- Exact subject matching
+- Publishing restricted to the intended repository and `main` branch
+- ECR permissions scoped to the SecureCart frontend and backend repositories
+
+The correction did not require long-lived AWS access keys or broader IAM permissions.
+
+Terraform validation succeeded.
+
+The Terraform plan identified one in-place IAM trust-policy modification, with no resources added or destroyed.
+
+Applied the approved change and independently verified the resulting IAM trust-policy conditions using the AWS CLI.
+
+### Successful Publishing Validation
+
+After merging the trust-policy correction, the Trusted Artifact Publishing workflow completed successfully.
+
+The workflow published both SecureCart container images to:
+
+- GHCR: `ghcr.io/greatone33/securecart-backend`
+- GHCR: `ghcr.io/greatone33/securecart-frontend`
+- ECR: `securecart/backend`
+- ECR: `securecart/frontend`
+
+The successful publishing run used source commit:
+
+`049354f17345946435821f7f14e889b373c46c6b`
+
+Both images were tagged using the source commit identifier.
+
+### Artifact Integrity Verification
+
+The publishing workflow reported matching image digests between GHCR and ECR.
+
+Backend image digest:
+
+`sha256:4dbeb24919a2be07fe1d5c9ddc9bf79fd97e721ce40fa251337a4cdf3d63a142`
+
+Frontend image digest:
+
+`sha256:1736ee623ae0f87712a257bb2b174a42148a5d5c06632ae38d254fcd652aef67`
+
+Independently queried Amazon ECR using:
+
+`aws ecr describe-images`
+
+Confirmed that both ECR repositories contained images with the expected source-commit tags and digests.
+
+This provided independent AWS-side evidence that the publishing workflow delivered the expected container artifacts.
+
+### Diagnostic Cleanup
+
+After confirming successful authentication and publishing, removed the temporary GitHub OIDC diagnostic step.
+
+Validated the modified workflow using:
+
+- `git diff --check`
+- `actionlint`
+
+Both checks completed without errors.
+
+Confirmed that the cleanup removed only the temporary diagnostic and preserved the existing authentication, vulnerability scanning, and publishing configuration.
+
+The cleanup was committed locally on:
+
+`chore/remove-oidc-diagnostic`
+
+Commit:
+
+`a0bd0b9`
+
+### AWS Infrastructure Teardown
+
+After completing integration validation, destroyed the Terraform-managed registry and identity stack to maintain the lab's cost-conscious infrastructure lifecycle.
+
+Terraform reported:
+
+`Destroy complete! Resources: 8 destroyed.`
+
+The destroyed resources included:
+
+- Two ECR repositories
+- Two ECR lifecycle policies
+- One registry scanning configuration
+- One GitHub OIDC provider
+- One IAM publishing role
+- One IAM publishing policy
+
+The ECR repositories used `force_delete = true`, so their stored images were deleted during destruction.
+
+The Terraform source configuration, remote state backend, GitHub repository, and GHCR images were not targeted by this teardown.
+
+The AWS publishing integration must be redeployed before another successful ECR publishing run can occur.
+
+### Outcome
+
+Successfully validated SecureCart's end-to-end trusted artifact publishing pipeline.
+
+Demonstrated:
+
+- GitHub Actions workload identity federation with AWS
+- IAM trust-policy troubleshooting
+- Immutable OIDC subject enforcement
+- Least-privilege container registry publishing permissions
+- Container vulnerability scanning before publication
+- Commit-derived artifact tagging
+- Cross-registry artifact digest verification
+- Independent AWS resource verification
+- Controlled Terraform infrastructure teardown
+
+The publishing pipeline was verified operational before the AWS infrastructure was intentionally destroyed.
+
+### Remaining Work
+
+- Complete and merge the temporary diagnostic cleanup PR
+- Update the project roadmap to reflect successful publishing validation
+- Redeploy registry and identity infrastructure before future ECR publishing tests
+- Revalidate the publishing workflow after diagnostic cleanup and infrastructure restoration
+- Continue the planned Kubernetes and AWS integration milestones
+
+### Lessons Learned
+
+- OIDC authentication failures require examining the actual token claims, not only the configured IAM policies.
+- GitHub immutable OIDC subjects can differ from conventional repository-name subjects.
+- Exact IAM trust-policy matching provides strong workload identity restrictions but requires accurate claim configuration.
+- CloudTrail and temporary workflow diagnostics provide complementary troubleshooting evidence.
+- Authentication trust policies and authorization permission policies address separate security concerns.
+- Successful CI/CD execution should be supplemented with independent verification of published artifacts.
+- Matching container image digests provide evidence of artifact consistency across registries.
+- Temporary security diagnostics should be removed after troubleshooting is complete.
+- Terraform enables repeatable infrastructure deployment and controlled teardown.
+- Engineering documentation should distinguish between successfully validated functionality and currently deployed infrastructure.
