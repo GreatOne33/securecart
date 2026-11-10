@@ -150,7 +150,10 @@
 - [x] Independently verify published ECR images using AWS CLI
 - [x] Remove temporary OIDC diagnostic and validate workflow
 - [x] Validate controlled teardown of registry and identity infrastructure
-- [ ] Merge OIDC diagnostic cleanup PR
+- [x] Merge OIDC diagnostic cleanup PR
+- [x] Make Amazon ECR publishing optional through a GitHub Actions repository variable
+- [x] Validate GHCR publishing with AWS ECR disabled
+- [x] Validate automated Kubernetes deployment and smoke tests with AWS infrastructure offline
 - [ ] Redeploy registry and identity infrastructure before further ECR testing
 - [ ] Revalidate trusted publishing after infrastructure restoration
 
