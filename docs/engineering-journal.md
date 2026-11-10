@@ -5541,3 +5541,186 @@ The publishing pipeline was verified operational before the AWS infrastructure w
 - Temporary security diagnostics should be removed after troubleshooting is complete.
 - Terraform enables repeatable infrastructure deployment and controlled teardown.
 - Engineering documentation should distinguish between successfully validated functionality and currently deployed infrastructure.
+
+## November 10, 2026 - Optional ECR Publishing and Automated Kubernetes Deployment Runtime Validation
+
+### Objective
+
+Validate that SecureCart's CI/CD pipeline continues operating successfully when the optional AWS ECR publishing integration is disabled and its Terraform-managed AWS registry and identity infrastructure has been intentionally destroyed.
+
+Verify successful GHCR artifact publishing, immutable image digest resolution, automated Kubernetes deployment, workload readiness, and application-level smoke tests.
+
+### Validation Environment
+
+The workflows executed on October 27, 2026, against source commit:
+
+`455bd501d41b565e6d1f3af2d9c4c5e16fa2692b`
+
+Runtime evidence was reviewed on November 10, 2026.
+
+The validation used:
+
+- GitHub-hosted Ubuntu Actions runners
+- GitHub Container Registry (GHCR)
+- GitHub Actions repository variable `AWS_ECR_PUBLISH_ENABLED=false`
+- An ephemeral Kubernetes cluster created using kind
+- Helm for application deployment
+- Kubernetes workload rollout validation
+- Automated application smoke tests
+
+The AWS registry and identity infrastructure remained offline. No AWS EKS cluster or persistent application environment was deployed.
+
+### CI and Trusted Artifact Publishing Validation
+
+Verified successful execution of the following GitHub Actions workflows:
+
+| Workflow | Run ID | Result |
+|---|---|---|
+| SecureCart CI | `40601227673` | Success |
+| Trusted Artifact Publishing | `40601325761` | Success |
+| Automated Kubernetes Deployment | `40601450601` | Success |
+
+The Trusted Artifact Publishing workflow successfully completed container builds, Trivy vulnerability scans, GHCR authentication, image publishing, and artifact digest recording.
+
+All five AWS-specific publishing steps were skipped because ECR publishing was disabled:
+
+- Configure AWS credentials using OIDC
+- Verify AWS identity
+- Authenticate to Amazon ECR
+- Publish images to Amazon ECR
+- Record ECR image digests
+
+This validated that GHCR publishing can operate independently of the optional AWS ECR integration.
+
+The workflow continues to enforce AWS publishing failures when the integration is enabled, rather than silently ignoring errors.
+
+### Immutable Artifact Identity
+
+The publishing workflow recorded immutable GHCR image digests for both application components.
+
+Backend:
+
+`ghcr.io/greatone33/securecart-backend@sha256:17dded909bfd112ba688567639a0555a28628702d5ef393bcc83a5bf7e12e0e4`
+
+Frontend:
+
+`ghcr.io/greatone33/securecart-frontend@sha256:f5ab146f1e988cc27fcefc7f75928ef63e4a70bd7d9452a2f5b1a9896655214f`
+
+The Kubernetes deployment workflow resolved these artifact digests and supplied them to Helm through the backend and frontend image digest configuration values.
+
+The deployment logs confirmed that the digests matched those recorded during artifact publishing.
+
+This provides traceability between the validated source commit, published container artifacts, and deployment configuration.
+
+Digest-based deployment reduces dependence on mutable image tags. This validation does not establish cryptographic artifact signing or provenance attestation.
+
+### Automated Kubernetes Deployment Validation
+
+The Automated Kubernetes Deployment workflow created an ephemeral kind cluster on a GitHub-hosted runner.
+
+The Kubernetes control plane reached the Ready state.
+
+Helm installed the SecureCart release successfully and reported:
+
+`STATUS: deployed`
+
+Deployment validation confirmed successful rollouts for:
+
+- `deployment/securecart-backend`
+- `deployment/securecart-frontend`
+
+The PostgreSQL StatefulSet rollout validation step also completed successfully.
+
+The workflow used the immutable backend and frontend image digests resolved from GHCR.
+
+### Application Smoke Test Validation
+
+After deployment, the workflow established a frontend port-forward and executed `scripts/smoke-test.sh`.
+
+All four application smoke tests passed:
+
+1. **Frontend:** Successfully served HTML.
+2. **Backend:** Application reported that it was running.
+3. **PostgreSQL:** Database connection and test query succeeded.
+4. **Product catalog:** Seeded database records were successfully retrieved.
+
+The execution log concluded with:
+
+`=== All smoke tests passed ===`
+
+These results demonstrate application-level connectivity and basic functionality in the ephemeral Kubernetes test environment.
+
+They do not establish production availability, performance, scalability, or resilience.
+
+### Execution Log Retrieval
+
+Initial attempts to retrieve workflow logs using `gh run view --log` returned no output.
+
+Confirmed that the workflow-level log command produced an empty file.
+
+Retrieved the deployment job identifier using the GitHub REST API:
+
+`122530305498`
+
+Successfully downloaded the job execution logs using the job-specific GitHub Actions API endpoint.
+
+The recovered log contained 533 lines and provided direct evidence of Helm deployment, Kubernetes rollouts, application smoke tests, and cleanup behavior.
+
+This demonstrated the value of using alternative API endpoints when standard CLI log retrieval does not provide sufficient diagnostic information.
+
+### Cleanup Observation
+
+Following successful application smoke tests, the kind action's post-job cleanup reported:
+
+`Error response from daemon: No such container: kind-registry`
+
+The workflow subsequently deleted the ephemeral Kubernetes cluster successfully.
+
+The deployment job concluded with a successful status.
+
+The missing-container message was therefore classified as a nonfatal cleanup observation rather than an application deployment failure.
+
+The precise cause was not independently established. Further investigation may be warranted if the warning persists.
+
+The logs also contained Node.js dependency deprecation warnings associated with GitHub Actions components. These should be reviewed during routine workflow maintenance.
+
+### Outcome
+
+Successfully validated SecureCart's CI/CD execution with optional AWS ECR publishing disabled.
+
+Demonstrated:
+
+- Successful CI execution
+- Trusted GHCR artifact publishing after security scanning
+- Optional AWS publishing behavior
+- Immutable container artifact identity
+- Automated Kubernetes deployment using Helm
+- Successful application workload rollouts
+- PostgreSQL connectivity and seeded application data validation
+- Four passing application smoke tests
+- Ephemeral cluster cleanup
+- Runtime troubleshooting using GitHub Actions REST API logs
+
+The validation confirms that SecureCart's GHCR-based delivery pipeline remains operational without active AWS registry and identity infrastructure.
+
+### Remaining Work
+
+- Review the nonfatal `kind-registry` cleanup warning if it recurs.
+- Review GitHub Actions dependency deprecation warnings.
+- Redeploy AWS registry and identity infrastructure when further ECR integration testing is required.
+- Revalidate dual-registry publishing after AWS infrastructure restoration.
+- Continue planned AWS networking and Kubernetes integration milestones.
+- Evaluate additional artifact provenance and supply-chain security controls.
+
+### Lessons Learned
+
+- Optional cloud integrations should be explicitly gated so unavailable infrastructure does not unnecessarily block independent delivery paths.
+- Required integrations should fail closed when enabled.
+- Immutable image digests improve deployment reproducibility and artifact traceability.
+- Successful workflow metadata should be supplemented with execution-log evidence.
+- Kubernetes rollout checks and application-level smoke tests validate different aspects of deployment health.
+- Database connectivity and seeded-data checks provide stronger application validation than container readiness alone.
+- Ephemeral Kubernetes clusters support repeatable integration testing without requiring persistent infrastructure.
+- Nonfatal cleanup warnings should be investigated proportionately and distinguished from application failures.
+- GitHub Actions job-specific API endpoints provide an alternative when workflow-level log retrieval fails.
+- Engineering documentation must distinguish validated lab functionality from persistent or production infrastructure.
